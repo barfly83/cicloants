@@ -717,6 +717,7 @@ class TrackingEngine {
     this.watchId  = null;
     this.pts      = [];
     this.tracking = false;
+    this._wakeLock = null;  // impedisce lo standby durante il tracciamento
   }
 
   /** Avvia il tracciamento GPS. Lancia eccezione se GPS non disponibile. */
@@ -727,6 +728,7 @@ class TrackingEngine {
     this.tracking = true;
     this.map.startTrack();
     this._firstFix = false;
+    this._acquireWakeLock();
 
     this.watchId = navigator.geolocation.watchPosition(
       pos => {
@@ -766,6 +768,7 @@ class TrackingEngine {
       this.watchId = null;
     }
     this.tracking = false;
+    this._releaseWakeLock();
 
     const km = this._distKm();
 
@@ -783,6 +786,18 @@ class TrackingEngine {
     let d = 0;
     for (let i = 1; i < this.pts.length; i++) d += haversine(this.pts[i - 1], this.pts[i]);
     return Math.round(d * 100) / 100;
+  }
+
+  async _acquireWakeLock() {
+    try {
+      if ('wakeLock' in navigator)
+        this._wakeLock = await navigator.wakeLock.request('screen');
+    } catch (_) {}
+  }
+
+  _releaseWakeLock() {
+    this._wakeLock?.release().catch(() => {});
+    this._wakeLock = null;
   }
 }
 
