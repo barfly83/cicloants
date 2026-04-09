@@ -357,14 +357,31 @@ class RoutingEngine {
       q:        query,
       format:   'json',
       limit:    '5',
-      viewbox:  '12.25,41.65,12.75,42.10',
-      bounded:  '1',
     });
     const resp = await fetch(
       `${CONFIG.NOMINATIM_BASE}/search?${params}`,
       { headers: { 'Accept-Language': 'it,en' }, signal: AbortSignal.timeout(8000) }
     );
     return resp.json();
+  }
+
+  /**
+   * Reverse geocодifica coordinate → indirizzo leggibile.
+   * @param {{lat:number,lng:number}} pt
+   */
+  async reverseGeocode({ lat, lng }) {
+    const params = new URLSearchParams({
+      lat:    lat.toFixed(6),
+      lon:    lng.toFixed(6),
+      format: 'json',
+      zoom:   '16',
+    });
+    const resp = await fetch(
+      `${CONFIG.NOMINATIM_BASE}/reverse?${params}`,
+      { headers: { 'Accept-Language': 'it,en' }, signal: AbortSignal.timeout(8000) }
+    );
+    const data = await resp.json();
+    return data?.display_name?.split(',').slice(0, 2).join(', ') || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
 }
 
@@ -381,6 +398,7 @@ class MapManager {
     this.markerB     = null;
     this.trackLayer  = null;
     this.posMarker   = null;
+    this.accuracyCircle = null;  // cerchio blu accuratezza GPS
   }
 
   init() {
@@ -417,6 +435,35 @@ class MapManager {
         1.00: '#ff0055',
       },
     }).addTo(this.map);
+  }
+
+  /**
+   * Chiede la posizione GPS e centra la mappa sull'utente.
+   * @param {function({lat,lng}):void} onLocated   callback con la posizione trovata
+   * @param {function(string):void}   onError      callback con messaggio d'errore
+   */
+  locateUser(onLocated, onError) {
+    if (!navigator.geolocation) {
+      onError?.('Geolocalizzazione non supportata dal browser');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        this.map.setView([pt.lat, pt.lng], 15, { animate: true });
+        this.updateAccuracyCircle(pt, pos.coords.accuracy);
+        onLocated?.(pt);
+      },
+      err => {
+        const msgs = {
+          1: 'Permesso GPS negato. Abilita la posizione nelle impostazioni del browser.',
+          2: 'GPS non disponibile. Verifica che la posizione sia attiva sul dispositivo.',
+          3: 'Timeout GPS. Vai all\'aperto e riprova.',
+        };
+        onError?.(msgs[err.code] || `Errore GPS (codice ${err.code})`);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
   }
 
   /* ── Heatmap ─────────────────────────────────────────────────── */
@@ -561,6 +608,32 @@ class MapManager {
   clearTrack() {
     if (this.trackLayer) { this.map.removeLayer(this.trackLayer); this.trackLayer = null; }
     if (this.posMarker)  { this.map.removeLayer(this.posMarker);  this.posMarker  = null; }
+    this.clearAccuracyCircle();
+  }
+
+  /* ── Cerchio accuratezza GPS ─────────────────────────────────── */
+
+  updateAccuracyCircle({ lat, lng }, accuracyM) {
+    if (this.accuracyCircle) {
+      this.accuracyCircle.setLatLng([lat, lng]);
+      this.accuracyCircle.setRadius(accuracyM);
+    } else {
+      this.accuracyCircle = L.circle([lat, lng], {
+        radius:      accuracyM,
+        color:       '#00ccff',
+        fillColor:   '#00ccff',
+        fillOpacity: 0.08,
+        weight:      1.5,
+        dashArray:   '5 5',
+      }).addTo(this.map);
+    }
+  }
+
+  clearAccuracyCircle() {
+    if (this.accuracyCircle) {
+      this.map.removeLayer(this.accuracyCircle);
+      this.accuracyCircle = null;
+    }
   }
 }
 
@@ -647,24 +720,42 @@ class TrackingEngine {
   }
 
   /** Avvia il tracciamento GPS. Lancia eccezione se GPS non disponibile. */
-  start(onUpdate, onPosition) {
+  start(onUpdate, onPosition, onError) {
     if (!navigator.geolocation) throw new Error('Geolocalizzazione non supportata dal browser');
 
     this.pts      = [];
     this.tracking = true;
     this.map.startTrack();
+    this._firstFix = false;
 
     this.watchId = navigator.geolocation.watchPosition(
       pos => {
-        const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        const pt = { lat, lng };
         this.pts.push(pt);
         this.map.addTrackPoint(pt);
         this.map.updatePosMarker(pt);
-        onPosition?.(pt);          // feed to NavigationEngine
-        onUpdate?.(this._distKm());
+        this.map.updateAccuracyCircle(pt, accuracy);
+        onPosition?.(pt);
+        onUpdate?.(this._distKm(), Math.round(accuracy));
+        this._firstFix = true;
       },
-      err => console.warn('GPS error', err.code, err.message),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 1000 }
+      err => {
+        // Mostra errore all'utente (non solo console)
+        const msgs = {
+          1: 'Permesso GPS negato. Abilita la posizione nelle impostazioni del browser.',
+          2: 'GPS non disponibile. Verifica che la posizione sia attiva sul dispositivo.',
+          3: 'Timeout GPS. Il segnale è debole — vai all\'aperto e riprova.',
+        };
+        const msg = msgs[err.code] || `Errore GPS (codice ${err.code})`;
+        console.warn('GPS error', err.code, err.message);
+        onError?.(msg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout:            30000,  // 30s per cold-start GPS
+        maximumAge:         0,      // sempre fix fresco
+      }
     );
   }
 
@@ -684,7 +775,7 @@ class TrackingEngine {
       this.phero.deposit(thinned, 1.0);
     }
 
-    this.map.clearTrack();
+    this.map.clearTrack(); // include clearAccuracyCircle()
     return km;
   }
 
@@ -744,6 +835,9 @@ class UIController {
 
     // Simulate
     document.getElementById('btn-simulate').addEventListener('click', () => this._runSimulation());
+
+    // Locate
+    document.getElementById('btn-locate').addEventListener('click', () => this._locateUser());
 
     // Track
     document.getElementById('btn-track').addEventListener('click', () => {
@@ -958,12 +1052,43 @@ class UIController {
     );
   }
 
+  /* ── Locate user ──────────────────────────────────────────────── */
+  _locateUser() {
+    const btn = document.getElementById('btn-locate');
+    btn.classList.add('locating');
+    btn.querySelector('.fab-icon').textContent = '⌛';
+    this.toast('📍 Ricerca posizione GPS…', 'info', 2500);
+
+    this.app.map.locateUser(
+      async pt => {
+        btn.classList.remove('locating');
+        btn.querySelector('.fab-icon').textContent = '📍';
+        // Prova reverse-geocoding per un toast carino
+        try {
+          const addr = await this.app.routing.reverseGeocode(pt);
+          this.toast(`📍 Sei qui: ${addr}`, 'success', 3500);
+        } catch (_) {
+          this.toast(`📍 Posizione trovata (${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)})`, 'success', 3000);
+        }
+      },
+      msg => {
+        btn.classList.remove('locating');
+        btn.querySelector('.fab-icon').textContent = '📍';
+        this.toast(msg, 'error', 5000);
+      }
+    );
+  }
+
   /* ── Tracking ─────────────────────────────────────────────────── */
   _startTracking() {
     try {
-      this.app.track.start(km => {
-        document.getElementById('tracking-distance').textContent = `${km} km`;
-      });
+      this.app.track.start(
+        km => {
+          document.getElementById('tracking-distance').textContent = `${km} km`;
+        },
+        null,
+        msg => this.toast(msg, 'error', 5000)   // ◄ onError ora propagato
+      );
       document.getElementById('btn-track').innerHTML =
         `<span class="fab-icon">⏹</span><span class="fab-label">Salva & Stop</span>`;
       document.getElementById('btn-track').classList.add('recording');
@@ -981,6 +1106,8 @@ class UIController {
       `<span class="fab-icon">🚴</span><span class="fab-label">Pedala!</span>`;
     document.getElementById('btn-track').classList.remove('recording');
     document.getElementById('tracking-bar').style.display = 'none';
+    const trackingLabel = document.getElementById('tracking-label');
+    if (trackingLabel) trackingLabel.textContent = '🔴 Registrazione attiva';
 
     this.app._syncStats();
     const curKm = parseFloat(document.getElementById('stat-km').textContent || '0');
@@ -1404,6 +1531,9 @@ class CicloAnts {
       this._syncStats();
     }, 5 * 60 * 1000);
 
+    // Auto-localizzazione silenziosa all'avvio (centra la mappa sulla posizione reale)
+    this._autoLocateOnStart();
+
     // Welcome toast
     setTimeout(() => {
       const n = this.phero.count;
@@ -1414,11 +1544,31 @@ class CicloAnts {
         );
       } else {
         this.ui.toast(
-          '🐜 Benvenuto! Clicca "Simula formiche" per popolare la mappa, o clicca su A→B per navigare.',
+          '🐜 Benvenuto! Clicca 📍 per centrarsi sulla tua posizione, poi A→B per navigare.',
           'info', 5500
         );
       }
     }, 800);
+  }
+
+  /**
+   * Tenta di centrare la mappa sulla posizione GPS dell'utente all'avvio.
+   * Silenziosa: nessun toast di errore se il permesso non è ancora concesso.
+   */
+  _autoLocateOnStart() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const pt = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        this.map.map.setView([pt.lat, pt.lng], 15, { animate: true });
+        this.map.updateAccuracyCircle(pt, pos.coords.accuracy);
+        // Aggiorna pulsante localizza per mostrare che abbiamo la posizione
+        const btn = document.getElementById('btn-locate');
+        if (btn) btn.style.boxShadow = '0 0 0 3px rgba(0,229,255,0.4)';
+      },
+      () => { /* silenzioso all'avvio — l'utente può cliccare 📍 manualmente */ },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   }
 
   /** Avvia connessione Supabase, carica feromoni condivisi, subscribe realtime. */
