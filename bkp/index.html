@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🐜 CicloAnts — Navigazione Ciclistica a Feromoni</title>
+  <meta name="description" content="Naviga in città come una formica: i percorsi migliori emergono dall'intelligenza collettiva dei ciclisti. Più ciclisti passano, più il feromone si rafforza." />
+  <meta property="og:title" content="CicloAnts — Navigazione a Feromoni" />
+  <meta property="og:description" content="Stigmergia ciclistica: l'intelligenza collettiva per trovare i percorsi urbani nascosti." />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="ant-logo" aria-hidden="true">🐜</div>
+      <div class="brand-text">
+        <span class="brand-name">CicloAnts</span>
+        <span class="brand-tagline">stigmergia ciclistica</span>
+      </div>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-pill">
+        <span class="stat-icon">🐜</span>
+        <span class="stat-value" id="stat-pheromones">0</span>
+        <span class="stat-unit">feromoni</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-icon">🚴</span>
+        <span class="stat-value" id="stat-ants">0</span>
+        <span class="stat-unit">formiche simulate</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-icon">📏</span>
+        <span class="stat-value" id="stat-km">0</span>
+        <span class="stat-unit">km registrati</span>
+      </div>
+    </div>
+
+    <button class="sidebar-toggle" id="btn-sidebar-toggle" aria-label="Apri/chiudi pannello">☰</button>
+  </header>
+
+  <!-- ═══════════════════════════ SIDEBAR ═══════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-scroll">
+
+      <!-- Search Section -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <span class="section-icon">🗺</span> Pianifica Percorso
+        </h2>
+        <div class="search-group">
+          <div class="search-field-wrap">
+            <span class="point-badge badge-a">A</span>
+            <input
+              type="text"
+              id="input-start"
+              class="search-input"
+              placeholder="Partenza… o clicca sulla mappa"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div class="suggestions-dropdown" id="suggestions-start"></div>
+          </div>
+
+          <div class="search-connector">
+            <div class="connector-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <button class="btn-swap" id="btn-swap" title="Inverti partenza e arrivo">⇅</button>
+          </div>
+
+          <div class="search-field-wrap">
+            <span class="point-badge badge-b">B</span>
+            <input
+              type="text"
+              id="input-end"
+              class="search-input"
+              placeholder="Destinazione… o clicca sulla mappa"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div class="suggestions-dropdown" id="suggestions-end"></div>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btn-route">
+          <span class="btn-ant-spin">🐜</span>
+          <span>Trova percorso formiche</span>
+        </button>
+      </section>
+
+      <!-- Pheromone Intensity -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <span class="section-icon">⚗️</span> Peso Feromoni
+        </h2>
+        <div class="slider-wrap">
+          <div class="slider-labels">
+            <span>Solo distanza</span>
+            <span class="alpha-badge" id="alpha-value">α = 0.7</span>
+            <span>Solo feromoni</span>
+          </div>
+          <input
+            type="range"
+            id="slider-alpha"
+            class="pheromone-slider"
+            min="0" max="1" step="0.05" value="0.7"
+          />
+        </div>
+        <p class="hint-text">
+          Con α alto il percorso segue la saggezza collettiva, anche se leggermente più lungo.
+        </p>
+      </section>
+
+      <!-- Route Results (hidden until route computed) -->
+      <section class="sidebar-section" id="section-results" style="display:none;">
+        <h2 class="section-title">
+          <span class="section-icon">📊</span> Percorsi Trovati
+        </h2>
+        <div id="route-cards"></div>
+      </section>
+
+      <!-- Navigation Panel (active during navigation) -->
+      <section class="sidebar-section" id="section-nav" style="display:none;">
+        <h2 class="section-title">
+          <span class="section-icon">🧭</span> Navigazione attiva
+        </h2>
+        <div class="nav-panel">
+
+          <!-- Current maneuver -->
+          <div class="nav-current">
+            <div class="nav-arrow-wrap">
+              <span class="nav-arrow-icon" id="nav-arrow" data-dir="straight">⬆</span>
+            </div>
+            <div class="nav-details">
+              <div class="nav-dist" id="nav-dist">--</div>
+              <div class="nav-instruction" id="nav-instruction">Pronto a partire…</div>
+              <div class="nav-street" id="nav-street"></div>
+              <div class="nav-step-counter" id="nav-step-count">Step 1/--</div>
+            </div>
+          </div>
+
+          <!-- Progress -->
+          <div class="nav-progress">
+            <div class="nav-progress-bar">
+              <div class="nav-progress-fill" id="nav-progress-fill" style="width:0%"></div>
+            </div>
+            <div class="nav-totals">
+              <span>Rimanente: <strong id="nav-remaining-dist">--</strong></span>
+              <span>ETA: <strong id="nav-remaining-time">--</strong></span>
+            </div>
+          </div>
+
+          <!-- Next steps list -->
+          <div class="nav-steps-list" id="nav-steps-list"></div>
+
+          <!-- Stop button -->
+          <button class="btn-stop-nav" id="btn-stop-nav">■ Termina navigazione</button>
+
+        </div>
+      </section>
+
+      <!-- Legend -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <span class="section-icon">🎨</span> Legenda Feromoni
+        </h2>
+        <div class="legend-grid">
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #1a44ff, #00ccff)"></div>
+            <div class="legend-desc">
+              <strong>Debole</strong>
+              <span>Pochi passaggi</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ccff, #00ff88)"></div>
+            <div class="legend-desc">
+              <strong>Discreto</strong>
+              <span>Percorso valido</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ff88, #ffaa00)"></div>
+            <div class="legend-desc">
+              <strong>Caldo</strong>
+              <span>Molto usato</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #ffaa00, #ff0055)"></div>
+            <div class="legend-desc">
+              <strong>🔥 Élite</strong>
+              <span>Saggezza massima</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- About -->
+      <section class="sidebar-section about-section">
+        <div class="about-card">
+          <p class="about-text">
+            Come le formiche usano i feromoni per trovare il percorso ottimale, i ciclisti lasciano tracce digitali. Un tratto frequentato non è il più corto — è quello dove qualcuno ha scoperto una <strong>rampa abusiva</strong>, una <strong>scorciatoia sicura</strong>, un <strong>marciapiede tranquillo</strong>. La magia emerge dal basso.
+          </p>
+          <div class="about-formula">
+            <code>costo = distanza × (1−α) − feromone × α</code>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /sidebar-scroll -->
+  </aside>
+
+  <!-- ═══════════════════════════ MAP ═══════════════════════════ -->
+  <main class="map-container" id="map" role="main" aria-label="Mappa interattiva feromoni ciclisti"></main>
+
+  <!-- ═══════════════════════════ FLOATING CONTROLS ═══════════════════════════ -->
+  <div class="fab-group" role="toolbar" aria-label="Controlli principali">
+    <button class="fab fab-simulate" id="btn-simulate" title="Simula 20 formiche su Roma">
+      <span class="fab-icon">🐜</span>
+      <span class="fab-label">Simula formiche</span>
+    </button>
+    <button class="fab fab-track" id="btn-track" title="Registra la tua traccia GPS">
+      <span class="fab-icon">🚴</span>
+      <span class="fab-label">Pedala!</span>
+    </button>
+    <button class="fab fab-clear" id="btn-clear" title="Cancella tutti i feromoni">
+      <span class="fab-icon">🧹</span>
+      <span class="fab-label">Reset</span>
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════ TRACKING BAR ═══════════════════════════ -->
+  <div class="tracking-bar" id="tracking-bar" style="display:none;" role="status" aria-live="polite">
+    <div class="tracking-pulse"></div>
+    <span class="tracking-label">🔴 Registrazione attiva</span>
+    <span class="tracking-distance" id="tracking-distance">0.0 km</span>
+    <button class="btn-stop" id="btn-stop-track">■ Ferma e salva</button>
+  </div>
+
+  <!-- ═══════════════════════════ TOAST CONTAINER ═══════════════════════════ -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <!-- ═══════════════════════════ SCRIPTS ═══════════════════════════ -->
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet Heat plugin -->
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <!-- App -->
+  <script src="app.js"></script>
+</body>
+</html>
