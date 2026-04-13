@@ -411,8 +411,8 @@ class MapManager {
       preferCanvas: true,
     });
 
-    // Dark tile — CartoDB Dark Matter (CARTO, no API key needed)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Light tile — CartoDB Positron (CARTO, no API key needed)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com">CARTO</a>',
       subdomains:  'abcd',
       maxZoom:     20,
@@ -472,7 +472,7 @@ class MapManager {
   }
 
   /* ── Route drawing ───────────────────────────────────────────── */
-  drawRoute(points, { color = '#00e5ff', weight = 4, opacity = 0.85, dash = null } = {}) {
+  drawRoute(points, { color = '#005cc5', weight = 5, opacity = 0.90, dash = null } = {}) {
     const ll = points.map(({ lat, lng }) => [lat, lng]);
     const layer = L.polyline(ll, {
       color, weight, opacity,
@@ -620,9 +620,9 @@ class MapManager {
     } else {
       this.accuracyCircle = L.circle([lat, lng], {
         radius:      accuracyM,
-        color:       '#00ccff',
-        fillColor:   '#00ccff',
-        fillOpacity: 0.08,
+        color:       '#005cc5',
+        fillColor:   '#005cc5',
+        fillOpacity: 0.10,
         weight:      1.5,
         dashArray:   '5 5',
       }).addTo(this.map);
@@ -967,13 +967,13 @@ class UIController {
       // Disegna alternative (sfumate)
       ranked.slice(1).forEach(r => {
         this.app.map.drawRoute(r.points, {
-          color: '#384d66', weight: 3, opacity: 0.55, dash: '8 5',
+          color: '#94aec8', weight: 3, opacity: 0.70, dash: '8 5',
         });
       });
 
-      // Percorso migliore: ciano brillante
+      // Percorso migliore: blu intenso
       this.app.map.drawRoute(best.points, {
-        color: '#00e5ff', weight: 6, opacity: 0.95,
+        color: '#005cc5', weight: 6, opacity: 0.95,
       });
 
       this.app.map.fitRoute(best.points);
