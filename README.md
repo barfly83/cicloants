@@ -2,6 +2,8 @@
 
 > **Idea originale:** Riprodurre il meccanismo dell'intelligenza collettiva delle formiche (Ant Colony Optimization) applicato alla navigazione urbana per ciclisti. I percorsi migliori non sono i più corti — sono quelli dove i ciclisti hanno scoperto qualcosa di speciale: rampe abusive, scorciatoie sicure, marciapiedi tranquilli. La saggezza emerge dal basso.
 
+🟢 **Live demo:** [barfly83.github.io/cicloants](https://barfly83.github.io/cicloants/)
+
 ---
 
 ## Struttura del progetto
@@ -9,8 +11,8 @@
 ```
 app bici/
 ├── index.html      # Struttura HTML completa
-├── style.css       # Design system dark cosmic + glassmorphism
-├── app.js          # Logica ACO: 7 classi, ~800 righe
+├── style.css       # Design system light — alta leggibilità in bici
+├── app.js          # Logica ACO: 7 classi, ~1650 righe
 └── README.md       # Questo file
 ```
 
@@ -49,20 +51,22 @@ score = (1 − α) × score_distanza + α × score_feromoni
 - Deposita feromoni lungo array di punti `{lat, lng}`
 - Fonde punti vicini (`< 33m`) per complessità lineare
 - Evaporazione: `τ(t) = τ(t-1) × (1 − ρ)^Δhours`
-- Persistenza in `localStorage` (cap 3000 punti)
+- Persistenza locale in `localStorage` (cap 3000 punti)
+- **Sincronizzazione globale via Supabase** (vedi backend)
 - Calcola densità locale per scoring percorsi
 
 ### `RoutingEngine`
 - Chiama **OSRM** (`router.project-osrm.org`) profilo `bike`
 - Geometria GeoJSON, fino a 3 alternative
-- Geocodifica indirizzi via **Nominatim** (viewbox Roma)
+- Geocodifica indirizzi via **Nominatim** (senza restrizioni geografiche)
 - `rankRoutes(routes, alpha)` → ordinamento pesato
 
 ### `MapManager`
-- **Leaflet 1.9.4** + tile CartoDB Dark Matter
+- **Leaflet 1.9.4** + tile **CartoDB Positron** (tema chiaro, leggibile alla luce solare)
 - **Leaflet.heat** per heatmap feromoni in tempo reale
 - Animazione formiche lungo il percorso (`requestAnimationFrame`)
-- Gestione marker A/B, track GPS, layer percorsi
+- Gestione marker A/B, track GPS, cerchio accuratezza GPS
+- Navigazione turn-by-turn con pannello istruzioni
 
 ### `SimulationEngine`
 - Genera `N` coppie casuali tra i 18 landmark di Roma
@@ -71,14 +75,22 @@ score = (1 − α) × score_distanza + α × score_feromoni
 
 ### `TrackingEngine`
 - `navigator.geolocation.watchPosition` (alta precisione)
+- WakeLock per impedire standby dello schermo durante la pedalata
 - Al stop: assottiglia punti (1/3) e deposita feromoni
 
+### `SupabaseSync`
+- Sincronizzazione real-time dei feromoni tra tutti gli utenti connessi
+- Deposit push: i nuovi feromoni vengono inviati al backend condiviso
+- Pull on start: carica i feromoni globali al primo avvio
+- Subscription live: aggiornamenti in tempo reale via WebSocket
+
 ### `UIController`
-- Autocomplete Nominatim con debounce 420ms
+- Autocomplete Nominatim con debounce 420ms (geocodifica globale)
 - Slider α con badge in tempo reale
 - Click mappa per impostare A→B in sequenza
 - Toast notifications non bloccanti
 - Mobile-ready con sidebar a drawer
+- Navigazione turn-by-turn con frecce direzionali e progress bar
 
 ---
 
@@ -88,6 +100,7 @@ score = (1 − α) × score_distanza + α × score_feromoni
 |---|---|---|
 | Leaflet.js | 1.9.4 | Mappa interattiva |
 | Leaflet.heat | 0.2.0 | Heatmap feromoni |
+| Supabase JS | 2.x | Backend condiviso real-time |
 | Google Fonts | Space Grotesk | Typography |
 | OSRM Public API | — | Routing bici |
 | Nominatim OSM | — | Geocodifica |
@@ -106,9 +119,9 @@ Oppure apri direttamente `index.html` in Chromium.
 
 ---
 
-## Funzionalità implementate (v1)
+## Funzionalità implementate
 
-- [x] Mappa dark (CartoDB) con layer ciclabile
+### v1 — Base
 - [x] Heatmap feromoni con gradiente blu→verde→arancio→rosso
 - [x] Simulazione 20 formiche su Roma (landmark reali)
 - [x] Animazione formica animata sul percorso
@@ -116,7 +129,7 @@ Oppure apri direttamente `index.html` in Chromium.
 - [x] Selezione percorso pesata feromoni (slider α)
 - [x] Visualizzazione 3 percorsi alternativi (sfumati)
 - [x] Route cards con punteggio, distanza, tempo, % feromoni
-- [x] Autocomplete Nominatim per indirizzi Roma
+- [x] Autocomplete Nominatim per indirizzi
 - [x] Click su mappa per impostare A/B
 - [x] Tracking GPS real-time con traccia arancione
 - [x] Evaporazione feromoni (2%/ora) con persistenza localStorage
@@ -125,11 +138,23 @@ Oppure apri direttamente `index.html` in Chromium.
 - [x] Layout responsive (mobile sidebar drawer)
 - [x] Reset completo mappa
 
+### v2 — Backend & Navigazione
+- [x] **Backend condiviso Supabase** — feromoni sincronizzati tra tutti gli utenti in real-time
+- [x] **Navigazione turn-by-turn** — istruzioni passo-passo con frecce direzionali, ETA, progress bar
+- [x] **Pulsante "Localizzami"** — centra la mappa sulla posizione GPS con cerchio di accuratezza
+- [x] **Geocodifica globale** — ricerca indirizzi in tutto il mondo (non solo Roma)
+- [x] **WakeLock** — schermo sempre acceso durante la registrazione GPS
+
+### v3 — Tema chiaro
+- [x] **Tema light** — design chiaro ottimizzato per leggibilità in piena luce solare
+- [x] **Tile CartoDB Positron** — mappa chiara al posto del precedente tema scuro
+- [x] **Contrasti elevati** — testo inchiostro scuro, accenti blu solido, bottoni vivaci
+- [x] **FAB touch-friendly** — pulsanti 52×52px ottimizzati per uso con guanti o in movimento
+
 ---
 
-## Idee per versioni future (v2+)
+## Idee per versioni future (v4+)
 
-- [ ] **Backend condiviso** (Supabase/Firebase) per feromoni multi-utente reali
 - [ ] **POI segnalazioni**: punta sulla mappa → "rampa abusiva", "marciapiede sicuro", "corsia contromano"
 - [ ] **Export GPX** del percorso consigliato
 - [ ] **Profilo utente**: storico pedalate e feromoni depositati
@@ -143,17 +168,29 @@ Oppure apri direttamente `index.html` in Chromium.
 
 ## Log delle sessioni di lavoro
 
-### 2026-04-09 — Sessione inaugurale
+### 2026-04-13 — v3: Tema chiaro
+**Obiettivo:** Alta leggibilità in bici all'aperto  
+**Modifiche:**
+- `style.css` — completo redesign light (bianco/grigio, testo inchiostro, accenti blu solido)
+- `app.js` — tile CartoDB `dark_all` → `light_all` (Positron); colori percorso adattati
+
+### 2026-04-09 — v2: Backend + GPS + Navigazione
+**Obiettivo:** Sincronizzazione multi-utente e navigazione reale  
+**Modifiche:**
+- `app.js` — `SupabaseSync` per feromoni globali real-time
+- `app.js` — navigazione turn-by-turn (`NavigationEngine`)
+- `app.js` — pulsante "Localizzami" con cerchio accuratezza GPS
+- `app.js` — geocodifica rimossa restrizione geografica Roma
+
+### 2026-04-09 — v1: Sessione inaugurale
 **Obiettivo:** Build completo dell'app da zero  
-**Durata:** ~1 sessione  
 **Output:**
-- `index.html` (8.8 KB) — struttura + CDN
-- `style.css` (21.9 KB) — design system completo
-- `app.js` (36.7 KB) — 7 classi, algoritmo ACO
+- `index.html` — struttura + CDN
+- `style.css` — design system completo
+- `app.js` — 7 classi, algoritmo ACO
 
 **Decisioni prese:**
 - Stack: HTML + Vanilla CSS + JS vanilla (no framework, massima leggerezza)
-- Mappa: CartoDB Dark Matter (nessuna API key)
 - Routing: OSRM pubblico profilo `bike` (gratuito, max 3 alternative)
 - Storage: localStorage (MVP senza backend)
 - Città demo: Roma (18 landmark)
@@ -165,8 +202,7 @@ Oppure apri direttamente `index.html` in Chromium.
 - Fusione punti feromone entro 33m per evitare esplosione array
 - Cap localStorage a 3000 punti per evitare quota exceeded
 - Animazione formica via `requestAnimationFrame` (nessuna dipendenza esterna)
-- Patch di `PheromoneEngine.prototype.deposit` per aggiornamento heatmap reattivo
 
 ---
 
-*Aggiornato automaticamente · CicloAnts v1.0*
+*Aggiornato automaticamente · CicloAnts v3.0*
