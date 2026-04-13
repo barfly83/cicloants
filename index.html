@@ -8,6 +8,17 @@
   <meta property="og:title" content="CicloAnts — Navigazione a Feromoni" />
   <meta property="og:description" content="Stigmergia ciclistica: l'intelligenza collettiva per trovare i percorsi urbani nascosti." />
 
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#005cc5" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="CicloAnts" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192x192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512x512.png" />
+
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Google Fonts -->
@@ -267,6 +278,17 @@
   <!-- Supabase client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- App -->
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=3.0"></script>
+
+  <!-- Service Worker — PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('[SW] Registrato, scope:', reg.scope))
+          .catch(err => console.warn('[SW] Registrazione fallita:', err));
+      });
+    }
+  </script>
 </body>
 </html>
