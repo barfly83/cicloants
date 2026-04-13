@@ -1,8 +1,34 @@
 # 🐜 CicloAnts — Navigazione Ciclistica a Feromoni
 
+> Installabile come app sul tuo telefono — nessuno store necessario!
+
 > **Idea originale:** Riprodurre il meccanismo dell'intelligenza collettiva delle formiche (Ant Colony Optimization) applicato alla navigazione urbana per ciclisti. I percorsi migliori non sono i più corti — sono quelli dove i ciclisti hanno scoperto qualcosa di speciale: rampe abusive, scorciatoie sicure, marciapiedi tranquilli. La saggezza emerge dal basso.
 
 🟢 **Live demo:** [barfly83.github.io/cicloants](https://barfly83.github.io/cicloants/)
+
+---
+
+## Installazione come app (PWA)
+
+CicloAnts è una **Progressive Web App** — si installa direttamente dal browser, senza passare da Play Store o App Store.
+
+### Firefox su Android (consigliato per bici)
+1. Apri [barfly83.github.io/cicloants](https://barfly83.github.io/cicloants/) in Firefox
+2. Tocca il menu **⋮** in basso a destra
+3. Seleziona **"Installa"** o **"Aggiungi a schermata Home"**
+4. L'app appare nella schermata Home con l'icona della formica 🐜
+
+### Chrome su Android
+1. Apri il link in Chrome
+2. Apparirà automaticamente il banner **"Aggiungi a schermata Home"**
+3. In alternativa: menu **⋮** → "Installa app"
+
+### Safari su iPhone/iPad
+1. Apri il link in Safari
+2. Tocca l'icona **Condividi** (quadrato con freccia)
+3. Seleziona **"Aggiungi a schermata Home"**
+
+> **Nota:** L'app funziona offline per la navigazione di base. Tile della mappa e routing richiedono connessione.
 
 ---
 
@@ -10,10 +36,13 @@
 
 ```
 app bici/
-├── index.html      # Struttura HTML completa
-├── style.css       # Design system light — alta leggibilità in bici
-├── app.js          # Logica ACO: 7 classi, ~1650 righe
-└── README.md       # Questo file
+├── index.html        # Struttura HTML + meta PWA
+├── style.css         # Design system light — alta leggibilità in bici
+├── app.js            # Logica ACO: 7 classi, ~1650 righe
+├── manifest.json     # Web App Manifest (PWA)
+├── sw.js             # Service Worker — caching offline
+├── icons/            # Icone PWA (72→512px + apple-touch-icon)
+└── README.md         # Questo file
 ```
 
 ---
@@ -145,11 +174,15 @@ Oppure apri direttamente `index.html` in Chromium.
 - [x] **Geocodifica globale** — ricerca indirizzi in tutto il mondo (non solo Roma)
 - [x] **WakeLock** — schermo sempre acceso durante la registrazione GPS
 
-### v3 — Tema chiaro
+### v3 — Tema chiaro + PWA
 - [x] **Tema light** — design chiaro ottimizzato per leggibilità in piena luce solare
 - [x] **Tile CartoDB Positron** — mappa chiara al posto del precedente tema scuro
 - [x] **Contrasti elevati** — testo inchiostro scuro, accenti blu solido, bottoni vivaci
 - [x] **FAB touch-friendly** — pulsanti 52×52px ottimizzati per uso con guanti o in movimento
+- [x] **PWA installabile** — manifest, service worker, icone multi-size (72→512px)
+- [x] **Compatibile Firefox Android** — installazione via menu ⋮ → Installa
+- [x] **Cache offline** — HTML/CSS/JS cached, tile e API sempre live
+- [x] **Shortcut "Pedala!"** — avvio rapido tracciamento GPS dall'icona dell'app
 
 ---
 
@@ -158,21 +191,25 @@ Oppure apri direttamente `index.html` in Chromium.
 - [ ] **POI segnalazioni**: punta sulla mappa → "rampa abusiva", "marciapiede sicuro", "corsia contromano"
 - [ ] **Export GPX** del percorso consigliato
 - [ ] **Profilo utente**: storico pedalate e feromoni depositati
-- [ ] **Modalità offline** con Service Worker e tile caching
+- [ ] **Tile offline**: pre-cache dei tile della zona di default per uso senza rete
 - [ ] **Notifica "tratto hot"**: vibrazione quando si avvicina a un nodo ad alto feromone
 - [ ] **Heat decay visivo**: feromoni che pulsano in base all'età
 - [ ] **Integrazione Strava**: importa tracce storiche per popolare feromoni
-- [ ] **PWA**: installabile come app su Android/iPhone
+- [ ] **Push notifications**: avvisa quando nuovi feromoni appaiono sul tuo percorso abituale
 
 ---
 
 ## Log delle sessioni di lavoro
 
-### 2026-04-13 — v3: Tema chiaro
-**Obiettivo:** Alta leggibilità in bici all'aperto  
+### 2026-04-13 — v3: Tema chiaro + PWA
+**Obiettivo:** Alta leggibilità in bici + installazione come app nativa  
 **Modifiche:**
 - `style.css` — completo redesign light (bianco/grigio, testo inchiostro, accenti blu solido)
 - `app.js` — tile CartoDB `dark_all` → `light_all` (Positron); colori percorso adattati
+- `manifest.json` — Web App Manifest con icone, tema, shortcut
+- `sw.js` — Service Worker cache-first (HTML/CSS/JS) + network-only (tile/API)
+- `icons/` — 9 icone PNG generate (72, 96, 128, 144, 152, 192, 384, 512px + apple-touch)
+- `index.html` — meta tag PWA, manifest link, registrazione SW
 
 ### 2026-04-09 — v2: Backend + GPS + Navigazione
 **Obiettivo:** Sincronizzazione multi-utente e navigazione reale  
@@ -205,4 +242,4 @@ Oppure apri direttamente `index.html` in Chromium.
 
 ---
 
-*Aggiornato automaticamente · CicloAnts v3.0*
+*Aggiornato automaticamente · CicloAnts v3.1 — PWA*
