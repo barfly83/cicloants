@@ -1,18 +1,18 @@
 /* ================================================================
-   CicloAnts — Service Worker v3.2
+   CicloAnts — Service Worker v3.3
    Strategia:
    - Cache-first per risorse statiche locali
    - Network-only per tile mappa, API esterne, Supabase
    ================================================================ */
 
-const CACHE_STATIC = 'cicloants-static-v3.2';
+const CACHE_STATIC = 'cicloants-static-v3.3';
 
 /* Risorse da precacheare all'installazione */
 const PRECACHE_URLS = [
   './',
   './index.html',
-  './style.css?v=3.2',
-  './app.js?v=3.2',
+  './style.css?v=3.3',
+  './app.js?v=3.3',
   './manifest.json',
   './icons/icon-192x192.png',
   './icons/icon-512x512.png',

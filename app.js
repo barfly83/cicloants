@@ -1623,10 +1623,14 @@ class AuthEngine {
   }
 
   async signUp(email, password, displayName) {
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
     const { data, error } = await this.client.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: redirectTo,
+      },
     });
     if (error) throw error;
     if (data?.user) {
