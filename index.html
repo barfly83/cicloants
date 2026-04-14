@@ -6,7 +6,7 @@
   <title>🐜 CicloAnts — Navigazione Ciclistica a Feromoni</title>
   <meta name="description" content="Naviga in città come una formica: i percorsi migliori emergono dall'intelligenza collettiva dei ciclisti. Più ciclisti passano, più il feromone si rafforza." />
   <meta property="og:title" content="CicloAnts — Navigazione a Feromoni" />
-  <meta property="og:description" content="Stigmergia ciclistica: l'intelligenza collettiva per trovare i percorsi urbani nascosti." />
+  <meta property="og:description" content="Pedala con l'intelligenza collettiva: trova i percorsi urbani nascosti." />
 
   <!-- PWA -->
   <link rel="manifest" href="manifest.json" />
@@ -33,7 +33,7 @@
       <div class="ant-logo" aria-hidden="true">🐜</div>
       <div class="brand-text">
         <span class="brand-name">CicloAnts</span>
-        <span class="brand-tagline">stigmergia ciclistica</span>
+        <span class="brand-tagline">Pedala con l'intelligenza collettiva</span>
       </div>
     </div>
 
@@ -66,6 +66,55 @@
   <!-- ═══════════════════════════ SIDEBAR ═══════════════════════════ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-scroll">
+
+      <!-- About -->
+      <section class="sidebar-section about-section">
+        <div class="about-card">
+          <p class="about-text">
+            Come le formiche usano i feromoni per trovare il percorso ottimale, i ciclisti lasciano tracce digitali. Un tratto frequentato non è il più corto — è quello dove qualcuno ha scoperto una <strong>rampa abusiva</strong>, una <strong>scorciatoia sicura</strong>, un <strong>marciapiede tranquillo</strong>. La magia emerge dal basso.
+          </p>
+          <div class="about-formula">
+            <code>costo = distanza × (1−α) − feromone × α</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Legend -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <span class="section-icon">🎨</span> Legenda Feromoni
+        </h2>
+        <div class="legend-grid">
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #1a44ff, #00ccff)"></div>
+            <div class="legend-desc">
+              <strong>Debole</strong>
+              <span>Pochi passaggi</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ccff, #00ff88)"></div>
+            <div class="legend-desc">
+              <strong>Discreto</strong>
+              <span>Percorso valido</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ff88, #ffaa00)"></div>
+            <div class="legend-desc">
+              <strong>Caldo</strong>
+              <span>Molto usato</span>
+            </div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background: linear-gradient(90deg, #ffaa00, #ff0055)"></div>
+            <div class="legend-desc">
+              <strong>🔥 Top</strong>
+              <span>Saggezza collettiva massima</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Search Section -->
       <section class="sidebar-section">
@@ -228,54 +277,7 @@
         <div id="leaderboard-list" class="leaderboard-list"></div>
       </section>
 
-      <!-- Legend -->
-      <section class="sidebar-section">
-        <h2 class="section-title">
-          <span class="section-icon">🎨</span> Legenda Feromoni
-        </h2>
-        <div class="legend-grid">
-          <div class="legend-item">
-            <div class="legend-swatch" style="background: linear-gradient(90deg, #1a44ff, #00ccff)"></div>
-            <div class="legend-desc">
-              <strong>Debole</strong>
-              <span>Pochi passaggi</span>
-            </div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ccff, #00ff88)"></div>
-            <div class="legend-desc">
-              <strong>Discreto</strong>
-              <span>Percorso valido</span>
-            </div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-swatch" style="background: linear-gradient(90deg, #00ff88, #ffaa00)"></div>
-            <div class="legend-desc">
-              <strong>Caldo</strong>
-              <span>Molto usato</span>
-            </div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-swatch" style="background: linear-gradient(90deg, #ffaa00, #ff0055)"></div>
-            <div class="legend-desc">
-              <strong>🔥 Élite</strong>
-              <span>Saggezza massima</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- About -->
-      <section class="sidebar-section about-section">
-        <div class="about-card">
-          <p class="about-text">
-            Come le formiche usano i feromoni per trovare il percorso ottimale, i ciclisti lasciano tracce digitali. Un tratto frequentato non è il più corto — è quello dove qualcuno ha scoperto una <strong>rampa abusiva</strong>, una <strong>scorciatoia sicura</strong>, un <strong>marciapiede tranquillo</strong>. La magia emerge dal basso.
-          </p>
-          <div class="about-formula">
-            <code>costo = distanza × (1−α) − feromone × α</code>
-          </div>
-        </div>
-      </section>
 
     </div><!-- /sidebar-scroll -->
   </aside>
