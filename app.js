@@ -905,8 +905,12 @@ class POIManager {
   constructor(mapMgr, sbClient) {
     this.map = mapMgr;
     this.sbClient = sbClient;
-    this.layerGroup = L.layerGroup().addTo(this.map.map);
+    this.layerGroup = null; // Inizializzato dopo che la mappa è pronta
     this.pois = [];
+  }
+
+  init() {
+    this.layerGroup = L.layerGroup().addTo(this.map.map);
   }
 
   async loadPOIs() {
@@ -2230,6 +2234,7 @@ class CicloAnts {
   async init() {
     // Inizializza mappa
     this.map.init();
+    this.poi.init();
 
     // Inizializza UI
     this.ui.init();
@@ -2252,7 +2257,7 @@ class CicloAnts {
     }
 
     // Carica POI
-    this.poi.loadPOIs();
+    // this.poi.loadPOIs();
 
     // Evaporazione periodica ogni 5 minuti
     setInterval(() => {
