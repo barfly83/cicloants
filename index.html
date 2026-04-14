@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=3.3" />
+  <link rel="stylesheet" href="style.css?v=3.4" />
 </head>
 <body>
 
@@ -51,7 +51,7 @@
       <div class="stat-pill">
         <span class="stat-icon">📏</span>
         <span class="stat-value" id="stat-km">0</span>
-        <span class="stat-unit">km registrati</span>
+        <span class="stat-unit" id="stat-km-unit">km registrati</span>
       </div>
       <div class="stat-pill stat-sync" id="stat-sync-pill" title="Connessione backend">
         <span class="stat-icon">📡</span>
@@ -314,7 +314,7 @@
   <!-- Supabase client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- App -->
-  <script src="app.js?v=3.3"></script>
+  <script src="app.js?v=3.4"></script>
 
   <!-- Service Worker — PWA -->
   <script>

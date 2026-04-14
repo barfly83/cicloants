@@ -1853,12 +1853,15 @@ class CicloAnts {
   _syncStats() {
     document.getElementById('stat-pheromones').textContent = this.phero.count.toLocaleString('it');
     const kmEl = document.getElementById('stat-km');
+    const kmUnitEl = document.getElementById('stat-km-unit');
     if (!kmEl) return;
     if (this.auth?.user && this.communityKm != null) {
       kmEl.textContent = this.communityKm.toFixed(1);
+      if (kmUnitEl) kmUnitEl.textContent = 'km community';
       return;
     }
     kmEl.textContent = this.phero.kmRegistered;
+    if (kmUnitEl) kmUnitEl.textContent = 'km registrati';
   }
 
   async persistTrack(summary) {
