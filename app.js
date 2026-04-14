@@ -1720,15 +1720,6 @@ class LeaderboardService {
     if (error) throw error;
     return data || [];
   }
-
-  async communityKm() {
-    const { data, error } = await this.client
-      .from('leaderboard_km')
-      .select('total_km');
-    if (error) throw error;
-    const total = (data || []).reduce((sum, row) => sum + Number(row.total_km || 0), 0);
-    return Math.round(total * 10) / 10;
-  }
 }
 
 /* ================================================================
@@ -1898,12 +1889,13 @@ class CicloAnts {
     if (!this.auth?.user || !this.stats || !this.leaderboard) return;
     await this.auth.ensureProfile();
 
-    const [personal, board, communityKm] = await Promise.all([
+    const [personal, board] = await Promise.all([
       this.stats.personalStats(this.auth.user.id),
       this.leaderboard.top(3),
-      this.leaderboard.communityKm(),
     ]);
-    this.communityKm = communityKm;
+    this.communityKm = Math.round(
+      board.reduce((sum, row) => sum + Number(row.total_km || 0), 0) * 10
+    ) / 10;
 
     const km = document.getElementById('profile-total-km');
     const tracks = document.getElementById('profile-total-tracks');
