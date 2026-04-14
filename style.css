@@ -899,6 +899,61 @@ html, body {
   50%       { box-shadow: 0 0 22px rgba(212, 96, 0, 0.65); }
 }
 
+/* ── POI Styles ─────────────────────────────────────────────── */
+.poi-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poi-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-secondary {
+  background: var(--bg-raised);
+  border: 1.5px solid #d8e4f0;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--cyan);
+}
+
+.poi-marker {
+  font-size: 24px;
+  text-align: center;
+  line-height: 30px;
+}
+
+.poi-popup {
+  font-family: var(--font-family);
+  max-width: 200px;
+}
+
+.poi-popup h4 {
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+}
+
+.poi-popup p {
+  margin: 0 0 4px 0;
+  color: var(--text-secondary);
+}
+
+.poi-popup small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .fab-locate {
   background: #ffffff;
   border-color: rgba(0, 92, 197, 0.35);

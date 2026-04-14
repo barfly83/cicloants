@@ -98,6 +98,49 @@ create policy "tracks_delete_own"
   to authenticated
   using (auth.uid() = user_id);
 
+-- Tabella POI (Points of Interest) — segnalazioni community
+create table if not exists public.pois (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  lat numeric(10, 7) not null,
+  lng numeric(10, 7) not null,
+  type text not null check (type in ('ramp', 'shortcut', 'hazard', 'parking', 'shop', 'other')),
+  description text not null check (char_length(description) >= 3),
+  upvotes integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists pois_lat_lng_idx on public.pois(lat, lng);
+create index if not exists pois_type_idx on public.pois(type);
+create index if not exists pois_created_at_idx on public.pois(created_at desc);
+
+alter table public.pois enable row level security;
+
+drop policy if exists "pois_select_all" on public.pois;
+create policy "pois_select_all"
+  on public.pois for select
+  to authenticated, anon
+  using (true);
+
+drop policy if exists "pois_insert_own" on public.pois;
+create policy "pois_insert_own"
+  on public.pois for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+drop policy if exists "pois_update_own" on public.pois;
+create policy "pois_update_own"
+  on public.pois for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "pois_delete_own" on public.pois;
+create policy "pois_delete_own"
+  on public.pois for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
 drop view if exists public.leaderboard_km;
 create view public.leaderboard_km as
 select

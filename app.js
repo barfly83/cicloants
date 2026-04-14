@@ -898,6 +898,105 @@ class MapManager {
 }
 
 /* ================================================================
+   POI MANAGER
+   Gestisce i Points of Interest segnalati dalla community.
+   ================================================================ */
+class POIManager {
+  constructor(mapMgr, sbClient) {
+    this.map = mapMgr;
+    this.sbClient = sbClient;
+    this.layerGroup = L.layerGroup().addTo(this.map.map);
+    this.pois = [];
+  }
+
+  async loadPOIs() {
+    if (!this.sbClient) return;
+    try {
+      const { data, error } = await this.sbClient
+        .from('pois')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      this.pois = data || [];
+      this.renderPOIs();
+    } catch (err) {
+      console.warn('POI load failed:', err.message);
+    }
+  }
+
+  renderPOIs() {
+    this.layerGroup.clearLayers();
+    for (const poi of this.pois) {
+      const icon = this.getPOIIcon(poi.type);
+      const marker = L.marker([poi.lat, poi.lng], { icon })
+        .bindPopup(this.getPOIPopup(poi))
+        .addTo(this.layerGroup);
+    }
+  }
+
+  getPOIIcon(type) {
+    const icons = {
+      ramp: '🏔️',
+      shortcut: '🚀',
+      hazard: '⚠️',
+      parking: '🅿️',
+      shop: '🛒',
+      other: '📍'
+    };
+    return L.divIcon({
+      html: icons[type] || '📍',
+      className: 'poi-marker',
+      iconSize: [30, 30],
+      iconAnchor: [15, 30]
+    });
+  }
+
+  getPOIPopup(poi) {
+    return `
+      <div class="poi-popup">
+        <h4>${this.getPOITypeName(poi.type)}</h4>
+        <p>${poi.description}</p>
+        <small>Segnalato da ${poi.user_id ? 'community' : 'anon'} • 👍 ${poi.upvotes}</small>
+      </div>
+    `;
+  }
+
+  getPOITypeName(type) {
+    const names = {
+      ramp: 'Rampa ciclabile',
+      shortcut: 'Scorciatoia',
+      hazard: 'Pericolo',
+      parking: 'Parcheggio bici',
+      shop: 'Negozio bici',
+      other: 'Altro'
+    };
+    return names[type] || 'POI';
+  }
+
+  async addPOI(lat, lng, type, description) {
+    if (!this.sbClient || !this.sbClient.auth.user()) return false;
+    try {
+      const { data, error } = await this.sbClient
+        .from('pois')
+        .insert({
+          lat,
+          lng,
+          type,
+          description,
+          user_id: this.sbClient.auth.user().id
+        });
+      if (error) throw error;
+      this.pois.unshift(data[0]);
+      this.renderPOIs();
+      return true;
+    } catch (err) {
+      console.warn('POI add failed:', err.message);
+      return false;
+    }
+  }
+}
+
+/* ================================================================
    SIMULATION ENGINE
    Genera coppie casuali di landmark e simula formiche che
    percorrono Roma depositando feromoni. Effetto visivo + dati.
@@ -1121,6 +1220,8 @@ class UIController {
     this._clickState = 'A'; // prossimo click sulla mappa imposta A o B
     this._lastRoutes = [];  // cached dopo ogni calcolo, usati per la navigazione
     this._selectedRouteIdx = null;
+    this._poiMode    = false; // se true, click sulla mappa posiziona POI
+    this._poiLatLng  = null; // posizione temporanea per POI
   }
 
   init() {
@@ -1184,6 +1285,11 @@ class UIController {
     document.getElementById('btn-signout')?.addEventListener('click', () => this._signOut());
     window.addEventListener('cicloants-auth-changed', () => this.renderAuthState());
 
+    // POI
+    document.getElementById('btn-start-poi')?.addEventListener('click', () => this._startPOIMode());
+    document.getElementById('btn-add-poi')?.addEventListener('click', () => this._addPOI());
+    document.getElementById('btn-cancel-poi')?.addEventListener('click', () => this._cancelPOI());
+
     // Chiudi suggestions se si clicca fuori
     document.addEventListener('click', e => {
       document.querySelectorAll('.suggestions-dropdown').forEach(el => {
@@ -1198,16 +1304,18 @@ class UIController {
     const authed = document.getElementById('auth-user-panel');
     const profileSection = document.getElementById('section-profile');
     const leaderboardSection = document.getElementById('section-leaderboard');
+    const poiSection = document.getElementById('section-poi');
     const userNameEl = document.getElementById('auth-user-name');
     const userStat = document.getElementById('stat-user');
 
-    if (!guest || !authed || !profileSection || !leaderboardSection || !userNameEl) return;
+    if (!guest || !authed || !profileSection || !leaderboardSection || !poiSection || !userNameEl) return;
 
     if (user) {
       guest.style.display = 'none';
       authed.style.display = 'block';
       profileSection.style.display = 'block';
       leaderboardSection.style.display = 'block';
+      poiSection.style.display = 'block';
       userNameEl.textContent = user.user_metadata?.display_name || user.email || 'utente';
       if (userStat) userStat.textContent = 'online';
     } else {
@@ -1215,6 +1323,7 @@ class UIController {
       authed.style.display = 'none';
       profileSection.style.display = 'none';
       leaderboardSection.style.display = 'none';
+      poiSection.style.display = 'none';
       if (userStat) userStat.textContent = 'guest';
     }
   }
@@ -1270,6 +1379,14 @@ class UIController {
   _onMapClick(e) {
     const pt = { lat: e.latlng.lat, lng: e.latlng.lng };
     const label = `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`;
+
+    if (this._poiMode) {
+      this._poiLatLng = pt;
+      document.getElementById('poi-form').style.display = 'flex';
+      this.toast('Posizione POI impostata. Compila il form.', 'info', 2200);
+      this._poiMode = false;
+      return;
+    }
 
     if (this._clickState === 'A') {
       this.locA = pt;
@@ -1651,6 +1768,37 @@ class UIController {
       setTimeout(() => el.remove(), 400);
     }, ms);
   }
+
+  /* ── POI ─────────────────────────────────────────────────────── */
+  _startPOIMode() {
+    this._poiMode = true;
+    this.toast('Clicca sulla mappa per posizionare il POI.', 'info', 3000);
+  }
+
+  async _addPOI() {
+    if (!this._poiLatLng) return;
+    const type = document.getElementById('poi-type').value;
+    const desc = document.getElementById('poi-description').value.trim();
+    if (desc.length < 3) {
+      this.toast('Descrizione troppo corta (min 3 caratteri).', 'warning');
+      return;
+    }
+    const success = await this.app.poi.addPOI(this._poiLatLng.lat, this._poiLatLng.lng, type, desc);
+    if (success) {
+      this.toast('POI aggiunto con successo!', 'success');
+      this._cancelPOI();
+    } else {
+      this.toast('Errore nell\'aggiungere il POI.', 'error');
+    }
+  }
+
+  _cancelPOI() {
+    this._poiMode = false;
+    this._poiLatLng = null;
+    document.getElementById('poi-form').style.display = 'none';
+    document.getElementById('poi-description').value = '';
+  }
+
 }
 
 /* ================================================================
@@ -2065,6 +2213,7 @@ class CicloAnts {
     this.routing = new RoutingEngine(this.phero);
     this.track   = new TrackingEngine(this.phero, this.map);
     this.ui      = new UIController(this);
+    this.poi     = new POIManager(this.map, this.sbClient);
     this.nav     = null;  // NavigationEngine — attivo solo durante la navigazione
     this.sync    = null;  // SupabaseSync — backend condiviso
     this._syncDebounce = null;
@@ -2101,6 +2250,9 @@ class CicloAnts {
       this.ui.renderAuthState();
       await this.refreshUserPanels();
     }
+
+    // Carica POI
+    this.poi.loadPOIs();
 
     // Evaporazione periodica ogni 5 minuti
     setInterval(() => {

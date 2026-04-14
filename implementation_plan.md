@@ -127,8 +127,8 @@ Moduli:
 - [x] UX mobile-friendly
 
 ## Features v2 (post-MVP)
-- [ ] Backend Supabase per sync multi-utente reale
-- [ ] Segnalazione POI (rampe, corsie sicure, marker custom)
+- [x] Backend Supabase per sync multi-utente reale
+- [x] Segnalazione POI (rampe, corsie sicure, marker custom)
 - [ ] Export GPX del percorso consigliato
 - [ ] Storico personale pedalate
 
