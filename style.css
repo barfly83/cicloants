@@ -696,7 +696,7 @@ html, body {
 }
 
 /* ── About section ────────────────────────────────────────────── */
-.about-section { padding-bottom: 80px; }
+.about-section { padding-bottom: 14px; }
 
 .about-card {
   background: var(--bg-raised);
