@@ -1720,6 +1720,15 @@ class LeaderboardService {
     if (error) throw error;
     return data || [];
   }
+
+  async communityKm() {
+    const { data, error } = await this.client
+      .from('leaderboard_km')
+      .select('total_km');
+    if (error) throw error;
+    const total = (data || []).reduce((sum, row) => sum + Number(row.total_km || 0), 0);
+    return Math.round(total * 10) / 10;
+  }
 }
 
 /* ================================================================
@@ -1743,6 +1752,7 @@ class CicloAnts {
     this.tracks = this.sbClient ? new TrackRepository(this.sbClient) : null;
     this.stats = this.sbClient ? new StatsService(this.sbClient) : null;
     this.leaderboard = this.sbClient ? new LeaderboardService(this.sbClient) : null;
+    this.communityKm = null;
   }
 
   async init() {
@@ -1851,7 +1861,13 @@ class CicloAnts {
   /** Sincronizza le statistiche nell'header */
   _syncStats() {
     document.getElementById('stat-pheromones').textContent = this.phero.count.toLocaleString('it');
-    document.getElementById('stat-km').textContent = this.phero.kmRegistered;
+    const kmEl = document.getElementById('stat-km');
+    if (!kmEl) return;
+    if (this.auth?.user && this.communityKm != null) {
+      kmEl.textContent = this.communityKm.toFixed(1);
+      return;
+    }
+    kmEl.textContent = this.phero.kmRegistered;
   }
 
   async persistTrack(summary) {
@@ -1882,10 +1898,12 @@ class CicloAnts {
     if (!this.auth?.user || !this.stats || !this.leaderboard) return;
     await this.auth.ensureProfile();
 
-    const [personal, board] = await Promise.all([
+    const [personal, board, communityKm] = await Promise.all([
       this.stats.personalStats(this.auth.user.id),
       this.leaderboard.top(3),
+      this.leaderboard.communityKm(),
     ]);
+    this.communityKm = communityKm;
 
     const km = document.getElementById('profile-total-km');
     const tracks = document.getElementById('profile-total-tracks');
@@ -1897,6 +1915,7 @@ class CicloAnts {
     if (time) time.textContent = fmtTime(personal.totalTimeSec);
     if (elevation) elevation.textContent = `${personal.totalElevationM || 0} m`;
     if (last) last.textContent = fmtDate(personal.lastRideAt);
+    this._syncStats();
 
     const list = document.getElementById('leaderboard-list');
     if (!list) return;
@@ -1918,6 +1937,7 @@ class CicloAnts {
     const elevation = document.getElementById('profile-total-elevation');
     const last = document.getElementById('profile-last-ride');
     const board = document.getElementById('leaderboard-list');
+    this.communityKm = null;
     if (km) km.textContent = '0.0';
     if (tracks) tracks.textContent = '0';
     if (time) time.textContent = '0 min';
