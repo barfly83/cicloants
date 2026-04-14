@@ -48,6 +48,7 @@ const CONFIG = Object.freeze({
   // UI
   GEOCODE_DEBOUNCE:   420,      // ms debounce per autocomplete
   TOAST_DEFAULT_MS:   3200,
+  MIN_TRACK_KM:       0.05,
 });
 
 /* ────────────────────────────────────────────────────────────────
@@ -108,6 +109,12 @@ function fmtDist(m) {
 function fmtTime(s) {
   const m = Math.round(s / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m} min`;
+}
+
+/** Formatta data breve locale */
+function fmtDate(ts) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /** Assegna colore in base al punteggio pheromone normalizzato [0-1] */
@@ -725,6 +732,7 @@ class TrackingEngine {
     if (!navigator.geolocation) throw new Error('Geolocalizzazione non supportata dal browser');
 
     this.pts      = [];
+    this.startedAt = Date.now();
     this.tracking = true;
     this.map.startTrack();
     this._firstFix = false;
@@ -761,7 +769,7 @@ class TrackingEngine {
     );
   }
 
-  /** Ferma il tracciamento e deposita i feromoni. Ritorna km percorsi. */
+  /** Ferma il tracciamento, deposita feromoni e ritorna metadati traccia. */
   stop() {
     if (this.watchId != null) {
       navigator.geolocation.clearWatch(this.watchId);
@@ -770,7 +778,10 @@ class TrackingEngine {
     this.tracking = false;
     this._releaseWakeLock();
 
+    const endedAt = Date.now();
     const km = this._distKm();
+    const durationSec = Math.max(1, Math.round((endedAt - (this.startedAt || endedAt)) / 1000));
+    const avgSpeedKmh = durationSec > 0 ? (km / durationSec) * 3600 : 0;
 
     if (this.pts.length > 3) {
       // Assottiglia i punti (1 ogni 3) prima di depositare
@@ -779,7 +790,14 @@ class TrackingEngine {
     }
 
     this.map.clearTrack(); // include clearAccuracyCircle()
-    return km;
+    return {
+      km,
+      startedAt: this.startedAt || endedAt,
+      endedAt,
+      durationSec,
+      avgSpeedKmh: Math.round(avgSpeedKmh * 100) / 100,
+      pointsCount: this.pts.length,
+    };
   }
 
   _distKm() {
@@ -876,12 +894,85 @@ class UIController {
     // Stop navigazione
     document.getElementById('btn-stop-nav')?.addEventListener('click', () => this._stopNavigation());
 
+    // Auth
+    document.getElementById('btn-signup')?.addEventListener('click', () => this._signUp());
+    document.getElementById('btn-signin')?.addEventListener('click', () => this._signIn());
+    document.getElementById('btn-signout')?.addEventListener('click', () => this._signOut());
+    window.addEventListener('cicloants-auth-changed', () => this.renderAuthState());
+
     // Chiudi suggestions se si clicca fuori
     document.addEventListener('click', e => {
       document.querySelectorAll('.suggestions-dropdown').forEach(el => {
         if (!el.contains(e.target)) el.style.display = 'none';
       });
     });
+  }
+
+  renderAuthState() {
+    const user = this.app.auth?.user || null;
+    const guest = document.getElementById('auth-guest-panel');
+    const authed = document.getElementById('auth-user-panel');
+    const profileSection = document.getElementById('section-profile');
+    const leaderboardSection = document.getElementById('section-leaderboard');
+    const userNameEl = document.getElementById('auth-user-name');
+
+    if (!guest || !authed || !profileSection || !leaderboardSection || !userNameEl) return;
+
+    if (user) {
+      guest.style.display = 'none';
+      authed.style.display = 'block';
+      profileSection.style.display = 'block';
+      leaderboardSection.style.display = 'block';
+      userNameEl.textContent = user.user_metadata?.display_name || user.email || 'utente';
+    } else {
+      guest.style.display = 'block';
+      authed.style.display = 'none';
+      profileSection.style.display = 'none';
+      leaderboardSection.style.display = 'none';
+    }
+  }
+
+  async _signUp() {
+    const name = (document.getElementById('auth-name')?.value || '').trim();
+    const email = (document.getElementById('auth-email')?.value || '').trim();
+    const password = (document.getElementById('auth-password')?.value || '').trim();
+    if (!name || !email || password.length < 6) {
+      this.toast('Compila nome, email e password (min 6 caratteri).', 'warning');
+      return;
+    }
+    try {
+      await this.app.auth.signUp(email, password, name);
+      this.toast('Registrazione inviata. Controlla email se richiesta conferma.', 'success', 4200);
+    } catch (err) {
+      this.toast(`Registrazione fallita: ${err.message}`, 'error', 4500);
+    }
+  }
+
+  async _signIn() {
+    const email = (document.getElementById('auth-email')?.value || '').trim();
+    const password = (document.getElementById('auth-password')?.value || '').trim();
+    if (!email || !password) {
+      this.toast('Inserisci email e password per il login.', 'warning');
+      return;
+    }
+    try {
+      await this.app.auth.signIn(email, password);
+      await this.app.refreshUserPanels();
+      this.toast('Login effettuato.', 'success');
+    } catch (err) {
+      this.toast(`Login fallito: ${err.message}`, 'error', 4500);
+    }
+  }
+
+  async _signOut() {
+    try {
+      await this.app.auth.signOut();
+      this.renderAuthState();
+      this.app.resetUserPanels();
+      this.toast('Logout effettuato.', 'info');
+    } catch (err) {
+      this.toast(`Logout fallito: ${err.message}`, 'error', 4000);
+    }
   }
 
   /* ── Map click ────────────────────────────────────────────────── */
@@ -1115,7 +1206,8 @@ class UIController {
   }
 
   _stopTracking() {
-    const km = this.app.track.stop();
+    const summary = this.app.track.stop();
+    const km = summary.km;
 
     document.getElementById('btn-track').innerHTML =
       `<span class="fab-icon">🚴</span><span class="fab-label">Pedala!</span>`;
@@ -1128,9 +1220,13 @@ class UIController {
     const curKm = parseFloat(document.getElementById('stat-km').textContent || '0');
     document.getElementById('stat-km').textContent = Math.round((curKm + km) * 10) / 10;
 
-    this.toast(km > 0.05
+    this.toast(km > CONFIG.MIN_TRACK_KM
       ? `✅ ${km} km registrati! I tuoi feromoni aiuteranno altri ciclisti 🐜`
       : '✅ Traccia salvata (troppo breve per feromoni significativi).', 'success', 4000);
+
+    this.app.persistTrack(summary).catch(err => {
+      this.toast(`Salvataggio cloud traccia fallito: ${err.message}`, 'warning', 4500);
+    });
   }
 
   /* ── Clear ────────────────────────────────────────────────────── */
@@ -1508,6 +1604,114 @@ class SupabaseSync {
 }
 
 /* ================================================================
+   USER DOMAIN SERVICES
+   ================================================================ */
+class AuthEngine {
+  constructor(client) {
+    this.client = client;
+    this.user = null;
+  }
+
+  async init() {
+    const { data } = await this.client.auth.getSession();
+    this.user = data?.session?.user || null;
+    this.client.auth.onAuthStateChange((_evt, session) => {
+      this.user = session?.user || null;
+      window.dispatchEvent(new CustomEvent('cicloants-auth-changed', { detail: this.user }));
+    });
+    return this.user;
+  }
+
+  async signUp(email, password, displayName) {
+    const { data, error } = await this.client.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: displayName } },
+    });
+    if (error) throw error;
+    if (data?.user) {
+      await this.client.from('profiles').upsert(
+        { id: data.user.id, display_name: displayName },
+        { onConflict: 'id' }
+      );
+    }
+    return data;
+  }
+
+  async signIn(email, password) {
+    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    this.user = data?.user || null;
+    return data;
+  }
+
+  async signOut() {
+    const { error } = await this.client.auth.signOut();
+    if (error) throw error;
+    this.user = null;
+  }
+}
+
+class TrackRepository {
+  constructor(client) {
+    this.client = client;
+  }
+
+  async saveTrack(userId, track) {
+    const row = {
+      user_id: userId,
+      started_at: new Date(track.startedAt).toISOString(),
+      ended_at: new Date(track.endedAt).toISOString(),
+      distance_km: Number(track.km.toFixed(2)),
+      duration_sec: track.durationSec,
+      avg_speed_kmh: Number(track.avgSpeedKmh.toFixed(2)),
+    };
+    const { error } = await this.client.from('tracks').insert(row);
+    if (error) throw error;
+  }
+}
+
+class StatsService {
+  constructor(client) {
+    this.client = client;
+  }
+
+  async personalStats(userId) {
+    const { data, error } = await this.client
+      .from('tracks')
+      .select('distance_km,duration_sec,ended_at')
+      .eq('user_id', userId)
+      .order('ended_at', { ascending: false });
+    if (error) throw error;
+    const rows = data || [];
+    const totalKm = rows.reduce((s, r) => s + Number(r.distance_km || 0), 0);
+    const totalTimeSec = rows.reduce((s, r) => s + Number(r.duration_sec || 0), 0);
+    return {
+      totalKm: Math.round(totalKm * 100) / 100,
+      totalTracks: rows.length,
+      totalTimeSec,
+      lastRideAt: rows[0]?.ended_at || null,
+    };
+  }
+}
+
+class LeaderboardService {
+  constructor(client) {
+    this.client = client;
+  }
+
+  async top(limit = 15) {
+    const { data, error } = await this.client
+      .from('leaderboard_km')
+      .select('user_id,display_name,total_km,total_tracks')
+      .order('total_km', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  }
+}
+
+/* ================================================================
    CICLOANTS — Orchestratore principale
    ================================================================ */
 class CicloAnts {
@@ -1522,6 +1726,13 @@ class CicloAnts {
     this.nav     = null;  // NavigationEngine — attivo solo durante la navigazione
     this.sync    = null;  // SupabaseSync — backend condiviso
     this._syncDebounce = null;
+    this.sbClient = typeof window.supabase !== 'undefined'
+      ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON)
+      : null;
+    this.auth = this.sbClient ? new AuthEngine(this.sbClient) : null;
+    this.tracks = this.sbClient ? new TrackRepository(this.sbClient) : null;
+    this.stats = this.sbClient ? new StatsService(this.sbClient) : null;
+    this.leaderboard = this.sbClient ? new LeaderboardService(this.sbClient) : null;
   }
 
   async init() {
@@ -1530,6 +1741,7 @@ class CicloAnts {
 
     // Inizializza UI
     this.ui.init();
+    this.ui.renderAuthState();
 
     // Evaporazione feromoni salvati + aggiornamento heatmap
     this.phero.evaporate();
@@ -1538,6 +1750,14 @@ class CicloAnts {
 
     // Connessione Supabase (se disponibile)
     this._initSupabase();
+    if (this.auth) {
+      await this.auth.init();
+      window.addEventListener('cicloants-auth-changed', () => {
+        this.refreshUserPanels().catch(() => {});
+      });
+      this.ui.renderAuthState();
+      await this.refreshUserPanels();
+    }
 
     // Evaporazione periodica ogni 5 minuti
     setInterval(() => {
@@ -1599,6 +1819,7 @@ class CicloAnts {
         this._refreshHeatmap();
         this._syncStats();
       });
+      this.sync.client = this.sbClient || this.sync.client;
       const n = await this.sync.loadAll();
       this.sync.subscribeRealtime();
       this._refreshHeatmap();
@@ -1621,6 +1842,55 @@ class CicloAnts {
   _syncStats() {
     document.getElementById('stat-pheromones').textContent = this.phero.count.toLocaleString('it');
     document.getElementById('stat-km').textContent = this.phero.kmRegistered;
+  }
+
+  async persistTrack(summary) {
+    if (!this.auth?.user || !this.tracks) return;
+    if (!summary || summary.km < CONFIG.MIN_TRACK_KM) return;
+    await this.tracks.saveTrack(this.auth.user.id, summary);
+    await this.refreshUserPanels();
+  }
+
+  async refreshUserPanels() {
+    this.ui.renderAuthState();
+    if (!this.auth?.user || !this.stats || !this.leaderboard) return;
+
+    const [personal, board] = await Promise.all([
+      this.stats.personalStats(this.auth.user.id),
+      this.leaderboard.top(15),
+    ]);
+
+    const km = document.getElementById('profile-total-km');
+    const tracks = document.getElementById('profile-total-tracks');
+    const time = document.getElementById('profile-total-time');
+    const last = document.getElementById('profile-last-ride');
+    if (km) km.textContent = personal.totalKm.toFixed(1);
+    if (tracks) tracks.textContent = String(personal.totalTracks);
+    if (time) time.textContent = fmtTime(personal.totalTimeSec);
+    if (last) last.textContent = fmtDate(personal.lastRideAt);
+
+    const list = document.getElementById('leaderboard-list');
+    if (!list) return;
+    list.innerHTML = board.map((row, idx) => `
+      <div class="leaderboard-item ${row.user_id === this.auth.user.id ? 'leaderboard-item-me' : ''}">
+        <span class="leaderboard-rank">${idx + 1}</span>
+        <span class="leaderboard-name">${row.display_name || 'utente'}</span>
+        <span class="leaderboard-km">${Number(row.total_km || 0).toFixed(1)} km</span>
+      </div>
+    `).join('') || '<p class="hint-text">Nessun dato classifica disponibile.</p>';
+  }
+
+  resetUserPanels() {
+    const km = document.getElementById('profile-total-km');
+    const tracks = document.getElementById('profile-total-tracks');
+    const time = document.getElementById('profile-total-time');
+    const last = document.getElementById('profile-last-ride');
+    const board = document.getElementById('leaderboard-list');
+    if (km) km.textContent = '0.0';
+    if (tracks) tracks.textContent = '0';
+    if (time) time.textContent = '0 min';
+    if (last) last.textContent = '-';
+    if (board) board.innerHTML = '';
   }
 }
 

@@ -184,6 +184,49 @@
         </div>
       </section>
 
+      <!-- User Auth -->
+      <section class="sidebar-section" id="section-auth">
+        <h2 class="section-title">
+          <span class="section-icon">👤</span> Account
+        </h2>
+
+        <div class="auth-guest" id="auth-guest-panel">
+          <input type="text" id="auth-name" class="search-input auth-input" placeholder="Nome visualizzato" autocomplete="name" />
+          <input type="email" id="auth-email" class="search-input auth-input" placeholder="Email" autocomplete="email" />
+          <input type="password" id="auth-password" class="search-input auth-input" placeholder="Password (min 6 caratteri)" autocomplete="current-password" />
+          <div class="auth-actions">
+            <button class="btn-primary auth-btn" id="btn-signup">Registrati</button>
+            <button class="btn-primary auth-btn auth-btn-secondary" id="btn-signin">Login</button>
+          </div>
+        </div>
+
+        <div class="auth-user" id="auth-user-panel" style="display:none;">
+          <p class="auth-user-text">Connesso come <strong id="auth-user-name">-</strong></p>
+          <button class="btn-primary auth-btn auth-btn-logout" id="btn-signout">Logout</button>
+        </div>
+      </section>
+
+      <!-- Profile Stats -->
+      <section class="sidebar-section" id="section-profile" style="display:none;">
+        <h2 class="section-title">
+          <span class="section-icon">📈</span> Le Tue Statistiche
+        </h2>
+        <div class="profile-grid">
+          <div class="profile-stat"><span>Km totali</span><strong id="profile-total-km">0.0</strong></div>
+          <div class="profile-stat"><span>Uscite</span><strong id="profile-total-tracks">0</strong></div>
+          <div class="profile-stat"><span>Tempo totale</span><strong id="profile-total-time">0 min</strong></div>
+          <div class="profile-stat"><span>Ultima uscita</span><strong id="profile-last-ride">-</strong></div>
+        </div>
+      </section>
+
+      <!-- Leaderboard -->
+      <section class="sidebar-section" id="section-leaderboard" style="display:none;">
+        <h2 class="section-title">
+          <span class="section-icon">🏆</span> Classifica Km
+        </h2>
+        <div id="leaderboard-list" class="leaderboard-list"></div>
+      </section>
+
       <!-- Legend -->
       <section class="sidebar-section">
         <h2 class="section-title">
@@ -278,7 +321,7 @@
   <!-- Supabase client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <!-- App -->
-  <script src="app.js?v=3.0"></script>
+  <script src="app.js?v=3.1"></script>
 
   <!-- Service Worker — PWA -->
   <script>

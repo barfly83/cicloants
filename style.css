@@ -467,6 +467,123 @@ html, body {
   margin-top: 6px;
 }
 
+/* ── Account/Profile/Leaderboard ───────────────────────────────── */
+.auth-guest,
+.auth-user {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-input {
+  width: 100%;
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.auth-btn {
+  margin-top: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.auth-btn-secondary {
+  background: #0a7d3e;
+  box-shadow: 0 4px 14px rgba(10, 125, 62, 0.35);
+}
+
+.auth-btn-secondary:hover {
+  background: #076731;
+  box-shadow: 0 6px 20px rgba(10, 125, 62, 0.45);
+}
+
+.auth-btn-logout {
+  background: #c0003e;
+  box-shadow: 0 4px 14px rgba(192, 0, 62, 0.35);
+}
+
+.auth-btn-logout:hover {
+  background: #a20035;
+  box-shadow: 0 6px 20px rgba(192, 0, 62, 0.45);
+}
+
+.auth-user-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.profile-stat {
+  background: var(--bg-raised);
+  border: 1px solid #d8e4f0;
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-stat span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.profile-stat strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leaderboard-item {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid #d8e4f0;
+  border-radius: var(--radius-sm);
+}
+
+.leaderboard-item-me {
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+}
+
+.leaderboard-rank {
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.leaderboard-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.leaderboard-km {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 /* ── Route Cards ────────────────────────────────────────────────── */
 #route-cards { display: flex; flex-direction: column; gap: 8px; }
 
