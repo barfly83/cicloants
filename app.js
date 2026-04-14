@@ -113,6 +113,12 @@ function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/** Compat: DB non ancora migrato con elevation_gain_m */
+function isMissingElevationColumn(error) {
+  const msg = (error?.message || '').toLowerCase();
+  return msg.includes('elevation_gain_m') && (msg.includes('does not exist') || msg.includes('column'));
+}
+
 /** Assegna colore in base al punteggio pheromone normalizzato [0-1] */
 function pheroColor(norm) {
   if (norm > 0.75) return '#ff0055';
@@ -960,7 +966,11 @@ class UIController {
     }
     try {
       await this.app.auth.signIn(email, password);
-      await this.app.refreshUserPanels();
+      try {
+        await this.app.refreshUserPanels();
+      } catch (panelErr) {
+        console.warn('refreshUserPanels warning after login:', panelErr?.message || panelErr);
+      }
       this.toast('Login effettuato.', 'success');
     } catch (err) {
       this.toast(`Login fallito: ${err.message}`, 'error', 4500);
@@ -1633,7 +1643,13 @@ class TrackRepository {
       elevation_gain_m: Number(track.elevationGainM || 0),
     };
     const { error } = await this.client.from('tracks').insert(row);
-    if (error) throw error;
+    if (!error) return;
+    if (!isMissingElevationColumn(error)) throw error;
+
+    const fallbackRow = { ...row };
+    delete fallbackRow.elevation_gain_m;
+    const { error: fallbackError } = await this.client.from('tracks').insert(fallbackRow);
+    if (fallbackError) throw fallbackError;
   }
 
   async clearMyTracks(userId) {
@@ -1653,8 +1669,17 @@ class StatsService {
       .select('distance_km,duration_sec,elevation_gain_m,ended_at')
       .eq('user_id', userId)
       .order('ended_at', { ascending: false });
-    if (error) throw error;
-    const rows = data || [];
+    let rows = data || [];
+    if (error) {
+      if (!isMissingElevationColumn(error)) throw error;
+      const { data: fallbackData, error: fallbackError } = await this.client
+        .from('tracks')
+        .select('distance_km,duration_sec,ended_at')
+        .eq('user_id', userId)
+        .order('ended_at', { ascending: false });
+      if (fallbackError) throw fallbackError;
+      rows = fallbackData || [];
+    }
     const totalKm = rows.reduce((s, r) => s + Number(r.distance_km || 0), 0);
     const totalTimeSec = rows.reduce((s, r) => s + Number(r.duration_sec || 0), 0);
     const totalElevationM = rows.reduce((s, r) => s + Number(r.elevation_gain_m || 0), 0);

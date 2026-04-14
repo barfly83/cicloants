@@ -98,7 +98,8 @@ create policy "tracks_delete_own"
   to authenticated
   using (auth.uid() = user_id);
 
-create or replace view public.leaderboard_km as
+drop view if exists public.leaderboard_km;
+create view public.leaderboard_km as
 select
   p.id as user_id,
   p.display_name,
