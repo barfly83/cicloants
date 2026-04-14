@@ -2257,7 +2257,7 @@ class CicloAnts {
     }
 
     // Carica POI
-    // this.poi.loadPOIs();
+    this.poi.loadPOIs();
 
     // Evaporazione periodica ogni 5 minuti
     setInterval(() => {
