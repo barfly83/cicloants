@@ -38,10 +38,12 @@ CicloAnts è una **Progressive Web App** — si installa direttamente dal browse
 app bici/
 ├── index.html        # Struttura HTML + meta PWA
 ├── style.css         # Design system light — alta leggibilità in bici
-├── app.js            # Logica ACO: 7 classi, ~1650 righe
+├── app.js            # Logica ACO + Auth/Stats/Leaderboard
 ├── manifest.json     # Web App Manifest (PWA)
 ├── sw.js             # Service Worker — caching offline
 ├── icons/            # Icone PWA (72→512px + apple-touch-icon)
+├── supabase/         # SQL schema/policy per backend
+│   └── mvp_profile_schema.sql
 └── README.md         # Questo file
 ```
 
@@ -184,13 +186,21 @@ Oppure apri direttamente `index.html` in Chromium.
 - [x] **Cache offline** — HTML/CSS/JS cached, tile e API sempre live
 - [x] **Shortcut "Pedala!"** — avvio rapido tracciamento GPS dall'icona dell'app
 
+### v3.2 — Profilo utente + classifica km
+- [x] **Registrazione/Login** via Supabase Auth (email/password)
+- [x] **Profilo utente** con sezione account e sessione persistente
+- [x] **Persistenza tracce** su tabella `tracks` (km, durata, velocità media, start/end)
+- [x] **Statistiche personali** (km totali, uscite, tempo totale, ultima uscita)
+- [x] **Leaderboard globale** ordinata per km totali
+- [x] **Schema SQL dedicato** in `supabase/mvp_profile_schema.sql` con policy RLS owner-only
+
 ---
 
 ## Idee per versioni future (v4+)
 
 - [ ] **POI segnalazioni**: punta sulla mappa → "rampa abusiva", "marciapiede sicuro", "corsia contromano"
 - [ ] **Export GPX** del percorso consigliato
-- [ ] **Profilo utente**: storico pedalate e feromoni depositati
+- [x] **Profilo utente**: storico pedalate e feromoni depositati (MVP)
 - [ ] **Tile offline**: pre-cache dei tile della zona di default per uso senza rete
 - [ ] **Notifica "tratto hot"**: vibrazione quando si avvicina a un nodo ad alto feromone
 - [ ] **Heat decay visivo**: feromoni che pulsano in base all'età
@@ -200,6 +210,15 @@ Oppure apri direttamente `index.html` in Chromium.
 ---
 
 ## Log delle sessioni di lavoro
+
+### 2026-04-14 — v3.2: Profilo utente + classifica
+**Obiettivo:** introdurre account utente e gamification base  
+**Modifiche:**
+- `index.html` — nuove sezioni `Account`, `Le Tue Statistiche`, `Classifica Km`
+- `style.css` — componenti UI per auth/profile/leaderboard
+- `app.js` — `AuthEngine`, `TrackRepository`, `StatsService`, `LeaderboardService`
+- `app.js` — salvataggio tracce al termine del tracking GPS
+- `supabase/mvp_profile_schema.sql` — tabelle `profiles` e `tracks`, trigger profilo, view `leaderboard_km`, RLS/policy
 
 ### 2026-04-13 — v3: Tema chiaro + PWA
 **Obiettivo:** Alta leggibilità in bici + installazione come app nativa  
@@ -242,4 +261,4 @@ Oppure apri direttamente `index.html` in Chromium.
 
 ---
 
-*Aggiornato automaticamente · CicloAnts v3.1 — PWA*
+*Aggiornato automaticamente · CicloAnts v3.2 — profilo utente e classifica*
