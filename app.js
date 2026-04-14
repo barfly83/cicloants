@@ -1625,6 +1625,19 @@ class AuthEngine {
     if (error) throw error;
     this.user = null;
   }
+
+  async ensureProfile() {
+    if (!this.user) return;
+    const displayName =
+      this.user.user_metadata?.display_name ||
+      this.user.email?.split('@')[0] ||
+      'utente';
+    const { error } = await this.client.from('profiles').upsert(
+      { id: this.user.id, display_name: displayName },
+      { onConflict: 'id' }
+    );
+    if (error) throw error;
+  }
 }
 
 class TrackRepository {
@@ -1867,6 +1880,7 @@ class CicloAnts {
   async refreshUserPanels() {
     this.ui.renderAuthState();
     if (!this.auth?.user || !this.stats || !this.leaderboard) return;
+    await this.auth.ensureProfile();
 
     const [personal, board] = await Promise.all([
       this.stats.personalStats(this.auth.user.id),
