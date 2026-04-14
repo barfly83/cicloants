@@ -41,10 +41,6 @@ const CONFIG = Object.freeze({
   HEATMAP_RADIUS:     28,
   HEATMAP_BLUR:       18,
 
-  // Simulazione
-  SIM_PAIRS:          20,       // coppie di "formiche" da simulare
-  SIM_DELAY_MS:       600,      // pausa tra una formica e l'altra
-
   // UI
   GEOCODE_DEBOUNCE:   420,      // ms debounce per autocomplete
   TOAST_DEFAULT_MS:   3200,
@@ -866,9 +862,6 @@ class UIController {
       document.getElementById('alpha-value').textContent = `α = ${slider.value}`;
     });
 
-    // Simulate
-    document.getElementById('btn-simulate').addEventListener('click', () => this._runSimulation());
-
     // Locate
     document.getElementById('btn-locate').addEventListener('click', () => this._locateUser());
 
@@ -879,9 +872,6 @@ class UIController {
 
     // Stop tracking bar button
     document.getElementById('btn-stop-track').addEventListener('click', () => this._stopTracking());
-
-    // Clear
-    document.getElementById('btn-clear').addEventListener('click', () => this._clearAll());
 
     // Sidebar toggle (mobile)
     document.getElementById('btn-sidebar-toggle').addEventListener('click', () => {
@@ -915,6 +905,7 @@ class UIController {
     const profileSection = document.getElementById('section-profile');
     const leaderboardSection = document.getElementById('section-leaderboard');
     const userNameEl = document.getElementById('auth-user-name');
+    const userStat = document.getElementById('stat-user');
 
     if (!guest || !authed || !profileSection || !leaderboardSection || !userNameEl) return;
 
@@ -924,11 +915,13 @@ class UIController {
       profileSection.style.display = 'block';
       leaderboardSection.style.display = 'block';
       userNameEl.textContent = user.user_metadata?.display_name || user.email || 'utente';
+      if (userStat) userStat.textContent = 'online';
     } else {
       guest.style.display = 'block';
       authed.style.display = 'none';
       profileSection.style.display = 'none';
       leaderboardSection.style.display = 'none';
+      if (userStat) userStat.textContent = 'guest';
     }
   }
 
@@ -1128,36 +1121,6 @@ class UIController {
     });
   }
 
-  /* ── Simulation ───────────────────────────────────────────────── */
-  async _runSimulation() {
-    const btn = document.getElementById('btn-simulate');
-
-    if (this.app.sim.active) {
-      this.app.sim.stop();
-      btn.innerHTML = `<span class="fab-icon">🐜</span><span class="fab-label">Simula formiche</span>`;
-      btn.classList.remove('loading');
-      return;
-    }
-
-    btn.innerHTML = `<span class="fab-icon">⏹</span><span class="fab-label">Stop simulazione</span>`;
-    btn.classList.add('loading');
-    this.toast(`🐜 ${CONFIG.SIM_PAIRS} formiche virtuali esplorano Roma…`, 'info', 4000);
-
-    await this.app.sim.run(
-      (done, total) => {
-        this.app._syncStats();
-        document.getElementById('stat-ants').textContent = done;
-        this.toast(`🐜 Formica ${done}/${total} ha depositato feromoni`, 'info', 700);
-      },
-      () => {
-        btn.innerHTML = `<span class="fab-icon">🐜</span><span class="fab-label">Simula formiche</span>`;
-        btn.classList.remove('loading');
-        this.app._syncStats();
-        this.toast(`✅ Simulazione completa! Mappa aggiornata con ${this.app.phero.count} feromoni.`, 'success', 4500);
-      }
-    );
-  }
-
   /* ── Locate user ──────────────────────────────────────────────── */
   _locateUser() {
     const btn = document.getElementById('btn-locate');
@@ -1227,24 +1190,6 @@ class UIController {
     this.app.persistTrack(summary).catch(err => {
       this.toast(`Salvataggio cloud traccia fallito: ${err.message}`, 'warning', 4500);
     });
-  }
-
-  /* ── Clear ────────────────────────────────────────────────────── */
-  _clearAll() {
-    if (!confirm('Cancellare tutti i feromoni dalla mappa?')) return;
-    this.app.phero.clear();
-    this.app.map.clearRoutes();
-    this.app.map.clearMarkers();
-    this.app.map.clearTrack();
-    this.app.map.updateHeatmap([]);
-    this.locA = null;
-    this.locB = null;
-    this._clickState = 'A';
-    document.getElementById('input-start').value = '';
-    document.getElementById('input-end').value   = '';
-    document.getElementById('section-results').style.display = 'none';
-    this.app._syncStats();
-    this.toast('🧹 Mappa azzerata. I ciclisti ripartono da zero.', 'info');
   }
 
   /* ── Navigation turn-by-turn ──────────────────────────────────── */
@@ -1601,6 +1546,12 @@ class SupabaseSync {
       )
       .subscribe();
   }
+
+  /** Cancella tutti i feromoni remoti (reset globale community). */
+  async clearAllRemote() {
+    const { error } = await this.client.from('pheromones').delete().gte('lat', -90).lte('lat', 90);
+    if (error) throw error;
+  }
 }
 
 /* ================================================================
@@ -1673,6 +1624,11 @@ class TrackRepository {
     const { error } = await this.client.from('tracks').insert(row);
     if (error) throw error;
   }
+
+  async clearMyTracks(userId) {
+    const { error } = await this.client.from('tracks').delete().eq('user_id', userId);
+    if (error) throw error;
+  }
 }
 
 class StatsService {
@@ -1724,7 +1680,6 @@ class CicloAnts {
     this.phero   = new PheromoneEngine();
     this.map     = new MapManager();
     this.routing = new RoutingEngine(this.phero);
-    this.sim     = new SimulationEngine(this.phero, this.routing, this.map);
     this.track   = new TrackingEngine(this.phero, this.map);
     this.ui      = new UIController(this);
     this.nav     = null;  // NavigationEngine — attivo solo durante la navigazione
@@ -1852,6 +1807,22 @@ class CicloAnts {
     if (!this.auth?.user || !this.tracks) return;
     if (!summary || summary.km < CONFIG.MIN_TRACK_KM) return;
     await this.tracks.saveTrack(this.auth.user.id, summary);
+    await this.refreshUserPanels();
+  }
+
+  async resetAllData() {
+    // Reset locale immediato
+    this.phero.clear();
+    this.map.clearRoutes();
+    this.map.clearMarkers();
+    this.map.clearTrack();
+    this.map.updateHeatmap([]);
+    this._syncStats();
+
+    const tasks = [];
+    if (this.sync) tasks.push(this.sync.clearAllRemote());
+    if (this.auth?.user && this.tracks) tasks.push(this.tracks.clearMyTracks(this.auth.user.id));
+    await Promise.all(tasks);
     await this.refreshUserPanels();
   }
 

@@ -875,23 +875,6 @@ html, body {
 .fab-icon { font-size: 18px; }
 .fab-label { font-size: 13px; }
 
-.fab-simulate {
-  background: #ffffff;
-  border-color: rgba(107, 0, 212, 0.35);
-  color: var(--purple);
-}
-
-.fab-simulate:hover {
-  border-color: var(--purple);
-  background: rgba(107, 0, 212, 0.08);
-  box-shadow: 0 4px 20px rgba(107, 0, 212, 0.25);
-  transform: translateY(-2px);
-}
-
-.fab-simulate.loading .fab-icon {
-  animation: antSpin 0.6s linear infinite;
-}
-
 .fab-track {
   background: #ffffff;
   border-color: rgba(212, 96, 0, 0.4);
@@ -914,19 +897,6 @@ html, body {
 @keyframes recordPulse {
   0%, 100% { box-shadow: 0 0 8px rgba(212, 96, 0, 0.3); }
   50%       { box-shadow: 0 0 22px rgba(212, 96, 0, 0.65); }
-}
-
-.fab-clear {
-  background: #ffffff;
-  border-color: rgba(192, 0, 62, 0.3);
-  color: var(--red);
-}
-
-.fab-clear:hover {
-  border-color: var(--red);
-  background: rgba(192, 0, 62, 0.07);
-  box-shadow: 0 4px 20px rgba(192, 0, 62, 0.2);
-  transform: translateY(-2px);
 }
 
 .fab-locate {
