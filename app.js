@@ -873,6 +873,7 @@ class UIController {
     this._debounces  = {};
     this._clickState = 'A'; // prossimo click sulla mappa imposta A o B
     this._lastRoutes = [];  // cached dopo ogni calcolo, usati per la navigazione
+    this._selectedRouteIdx = 0;
   }
 
   init() {
@@ -1094,24 +1095,10 @@ class UIController {
       const routes  = await this.app.routing.fetchRoutes(this.locA, this.locB);
       const ranked  = this.app.routing.rankRoutes(routes, this.app.alpha);
       this._lastRoutes = ranked;
-      const best    = ranked[0];
-
-      this.app.map.clearRoutes();
-
-      // Disegna alternative (sfumate)
-      ranked.slice(1).forEach(r => {
-        this.app.map.drawRoute(r.points, {
-          color: '#94aec8', weight: 3, opacity: 0.70, dash: '8 5',
-        });
-      });
-
-      // Percorso migliore: blu intenso
-      this.app.map.drawRoute(best.points, {
-        color: '#005cc5', weight: 6, opacity: 0.95,
-      });
-
-      this.app.map.fitRoute(best.points);
-      this._renderRouteCards(ranked);
+      this._selectedRouteIdx = 0;
+      this._renderSelectedRoute();
+      this._renderRouteCards(this._lastRoutes, this._selectedRouteIdx);
+      const best = this._lastRoutes[this._selectedRouteIdx];
 
       const pheroMsg = best.pheroScore > 0
         ? `Feromone ${Math.round(best.pScore * 100)}%  ·  `
@@ -1135,14 +1122,16 @@ class UIController {
     const section = document.getElementById('section-results');
     const cards   = document.getElementById('route-cards');
 
+    const selectedIdx = this._selectedRouteIdx || 0;
     cards.innerHTML = ranked.map((r, i) => {
       const pct     = Math.round(r.score  * 100);
       const pheroPct = Math.round((r.pScore || 0) * 100);
       const color   = pheroColor(r.pScore || 0);
       const isNonConventional = r.profile === 'foot';
+      const isSelected = i === selectedIdx;
 
       return `
-        <div class="route-card ${i === 0 ? 'route-card-best' : ''} fade-in"
+        <div class="route-card ${isSelected ? 'route-card-best' : ''} fade-in"
              style="animation-delay:${i * 0.08}s">
           <div class="route-card-header">
             <span class="route-label">${labels[i] || `Percorso ${i+1}`}</span>
@@ -1166,14 +1155,48 @@ class UIController {
             <div class="phero-bar-fill" style="width:${pheroPct}%"></div>
           </div>
           ${isNonConventional ? '<div class="hint-text">⚠ Tratto non convenzionale suggerito dalla community</div>' : ''}
-          ${i === 0 ? '<button class="btn-nav-start" id="btn-start-nav">🧭 Avvia Navigazione</button>' : ''}
+          <button class="btn-nav-start" data-route-select="${i}">
+            ${isSelected ? '✅ Percorso selezionato' : 'Scegli questo percorso'}
+          </button>
+          ${isSelected ? '<button class="btn-nav-start" id="btn-start-nav">🧭 Avvia Navigazione</button>' : ''}
         </div>`;
     }).join('');
 
     section.style.display = 'block';
-    document.getElementById('btn-start-nav')?.addEventListener('click', () => {
-      this._startNavigation(this._lastRoutes[0]);
+    cards.querySelectorAll('[data-route-select]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-route-select'));
+        this._selectRoute(idx);
+      });
     });
+    document.getElementById('btn-start-nav')?.addEventListener('click', () => {
+      this._startNavigation(this._lastRoutes[this._selectedRouteIdx || 0]);
+    });
+  }
+
+  _renderSelectedRoute() {
+    if (!Array.isArray(this._lastRoutes) || !this._lastRoutes.length) return;
+    const selectedIdx = Math.max(0, Math.min(this._selectedRouteIdx || 0, this._lastRoutes.length - 1));
+    this._selectedRouteIdx = selectedIdx;
+    const selected = this._lastRoutes[selectedIdx];
+    this.app.map.clearRoutes();
+    this._lastRoutes.forEach((r, i) => {
+      if (i === selectedIdx) return;
+      this.app.map.drawRoute(r.points, {
+        color: '#94aec8', weight: 3, opacity: 0.70, dash: '8 5',
+      });
+    });
+    this.app.map.drawRoute(selected.points, {
+      color: '#005cc5', weight: 6, opacity: 0.95,
+    });
+    this.app.map.fitRoute(selected.points);
+  }
+
+  _selectRoute(idx) {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= this._lastRoutes.length) return;
+    this._selectedRouteIdx = idx;
+    this._renderSelectedRoute();
+    this._renderRouteCards(this._lastRoutes, this._selectedRouteIdx);
   }
 
   /* ── Locate user ──────────────────────────────────────────────── */
