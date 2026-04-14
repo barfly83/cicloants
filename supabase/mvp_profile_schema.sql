@@ -18,11 +18,13 @@ create table if not exists public.tracks (
   distance_km numeric(8, 2) not null check (distance_km >= 0),
   duration_sec integer not null check (duration_sec >= 0),
   avg_speed_kmh numeric(8, 2) not null check (avg_speed_kmh >= 0),
+  elevation_gain_m integer not null default 0 check (elevation_gain_m >= 0),
   created_at timestamptz not null default now()
 );
 
 create index if not exists tracks_user_id_idx on public.tracks(user_id);
 create index if not exists tracks_created_at_idx on public.tracks(created_at desc);
+alter table public.tracks add column if not exists elevation_gain_m integer not null default 0 check (elevation_gain_m >= 0);
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -101,6 +103,7 @@ select
   p.id as user_id,
   p.display_name,
   coalesce(sum(t.distance_km), 0)::numeric(10, 2) as total_km,
+  coalesce(sum(t.elevation_gain_m), 0)::int as total_elevation_m,
   count(t.id)::int as total_tracks
 from public.profiles p
 left join public.tracks t on t.user_id = p.id

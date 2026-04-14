@@ -729,6 +729,8 @@ class TrackingEngine {
 
     this.pts      = [];
     this.startedAt = Date.now();
+    this.elevationGainM = 0;
+    this._lastAltitudeM = null;
     this.tracking = true;
     this.map.startTrack();
     this._firstFix = false;
@@ -736,9 +738,16 @@ class TrackingEngine {
 
     this.watchId = navigator.geolocation.watchPosition(
       pos => {
-        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        const { latitude: lat, longitude: lng, accuracy, altitude } = pos.coords;
         const pt = { lat, lng };
         this.pts.push(pt);
+        if (Number.isFinite(altitude)) {
+          if (Number.isFinite(this._lastAltitudeM)) {
+            const delta = altitude - this._lastAltitudeM;
+            if (delta > 0 && delta < 50) this.elevationGainM += delta;
+          }
+          this._lastAltitudeM = altitude;
+        }
         this.map.addTrackPoint(pt);
         this.map.updatePosMarker(pt);
         this.map.updateAccuracyCircle(pt, accuracy);
@@ -788,6 +797,7 @@ class TrackingEngine {
     this.map.clearTrack(); // include clearAccuracyCircle()
     return {
       km,
+      elevationGainM: Math.round(this.elevationGainM || 0),
       startedAt: this.startedAt || endedAt,
       endedAt,
       durationSec,
@@ -1620,6 +1630,7 @@ class TrackRepository {
       distance_km: Number(track.km.toFixed(2)),
       duration_sec: track.durationSec,
       avg_speed_kmh: Number(track.avgSpeedKmh.toFixed(2)),
+      elevation_gain_m: Number(track.elevationGainM || 0),
     };
     const { error } = await this.client.from('tracks').insert(row);
     if (error) throw error;
@@ -1639,15 +1650,17 @@ class StatsService {
   async personalStats(userId) {
     const { data, error } = await this.client
       .from('tracks')
-      .select('distance_km,duration_sec,ended_at')
+      .select('distance_km,duration_sec,elevation_gain_m,ended_at')
       .eq('user_id', userId)
       .order('ended_at', { ascending: false });
     if (error) throw error;
     const rows = data || [];
     const totalKm = rows.reduce((s, r) => s + Number(r.distance_km || 0), 0);
     const totalTimeSec = rows.reduce((s, r) => s + Number(r.duration_sec || 0), 0);
+    const totalElevationM = rows.reduce((s, r) => s + Number(r.elevation_gain_m || 0), 0);
     return {
       totalKm: Math.round(totalKm * 100) / 100,
+      totalElevationM: Math.round(totalElevationM),
       totalTracks: rows.length,
       totalTimeSec,
       lastRideAt: rows[0]?.ended_at || null,
@@ -1832,25 +1845,29 @@ class CicloAnts {
 
     const [personal, board] = await Promise.all([
       this.stats.personalStats(this.auth.user.id),
-      this.leaderboard.top(15),
+      this.leaderboard.top(3),
     ]);
 
     const km = document.getElementById('profile-total-km');
     const tracks = document.getElementById('profile-total-tracks');
     const time = document.getElementById('profile-total-time');
+    const elevation = document.getElementById('profile-total-elevation');
     const last = document.getElementById('profile-last-ride');
     if (km) km.textContent = personal.totalKm.toFixed(1);
     if (tracks) tracks.textContent = String(personal.totalTracks);
     if (time) time.textContent = fmtTime(personal.totalTimeSec);
+    if (elevation) elevation.textContent = `${personal.totalElevationM || 0} m`;
     if (last) last.textContent = fmtDate(personal.lastRideAt);
 
     const list = document.getElementById('leaderboard-list');
     if (!list) return;
-    list.innerHTML = board.map((row, idx) => `
-      <div class="leaderboard-item ${row.user_id === this.auth.user.id ? 'leaderboard-item-me' : ''}">
-        <span class="leaderboard-rank">${idx + 1}</span>
-        <span class="leaderboard-name">${row.display_name || 'utente'}</span>
-        <span class="leaderboard-km">${Number(row.total_km || 0).toFixed(1)} km</span>
+    const medals = ['🥇', '🥈', '🥉'];
+    const topThree = Array.from({ length: 3 }, (_, idx) => board[idx] || null);
+    list.innerHTML = topThree.map((row, idx) => `
+      <div class="leaderboard-item ${row?.user_id === this.auth.user.id ? 'leaderboard-item-me' : ''}">
+        <span class="leaderboard-rank">${medals[idx]} ${idx + 1}</span>
+        <span class="leaderboard-name">${row ? (row.display_name || 'utente') : 'Posto disponibile'}</span>
+        <span class="leaderboard-km">${row ? `${Number(row.total_km || 0).toFixed(1)} km` : '- km'}</span>
       </div>
     `).join('') || '<p class="hint-text">Nessun dato classifica disponibile.</p>';
   }
@@ -1859,11 +1876,13 @@ class CicloAnts {
     const km = document.getElementById('profile-total-km');
     const tracks = document.getElementById('profile-total-tracks');
     const time = document.getElementById('profile-total-time');
+    const elevation = document.getElementById('profile-total-elevation');
     const last = document.getElementById('profile-last-ride');
     const board = document.getElementById('leaderboard-list');
     if (km) km.textContent = '0.0';
     if (tracks) tracks.textContent = '0';
     if (time) time.textContent = '0 min';
+    if (elevation) elevation.textContent = '0 m';
     if (last) last.textContent = '-';
     if (board) board.innerHTML = '';
   }
