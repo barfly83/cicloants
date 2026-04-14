@@ -25,7 +25,7 @@
    CONFIGURAZIONE
    ──────────────────────────────────────────────────────────────── */
 const CONFIG = Object.freeze({
-  OSRM_BASE:          'https://router.project-osrm.org/route/v1/bike',
+  OSRM_BASE:          'https://router.project-osrm.org/route/v1',
   NOMINATIM_BASE:     'https://nominatim.openstreetmap.org',
 
   // Feromoni
@@ -45,6 +45,10 @@ const CONFIG = Object.freeze({
   GEOCODE_DEBOUNCE:   420,      // ms debounce per autocomplete
   TOAST_DEFAULT_MS:   3200,
   MIN_TRACK_KM:       0.05,
+  ROUTE_PROFILES:     ['bike', 'foot'],
+  FOOT_BASE_PENALTY:  0.18,  // penalita base per percorsi non-bike
+  FOOT_PHERO_RELIEF:  0.14,  // quota penalty annullabile con feromoni alti
+  ALPHA_IGNORE_RULES: 0.99,  // solo feromoni: ignora penalita di conformita
 });
 
 /* ────────────────────────────────────────────────────────────────
@@ -305,24 +309,35 @@ class RoutingEngine {
    * @returns {Promise<RouteResult[]>}
    */
   async fetchRoutes(from, to) {
+    const attempts = await Promise.allSettled(
+      CONFIG.ROUTE_PROFILES.map(profile => this._fetchRoutesByProfile(profile, from, to))
+    );
+    const merged = [];
+    for (const result of attempts) {
+      if (result.status === 'fulfilled' && result.value?.length) merged.push(...result.value);
+    }
+    if (!merged.length) throw new Error('Nessun percorso trovato tra questi punti');
+    return merged;
+  }
+
+  async _fetchRoutesByProfile(profile, from, to) {
     const coord = (p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
-    const url = `${CONFIG.OSRM_BASE}/${coord(from)};${coord(to)}`
+    const url = `${CONFIG.OSRM_BASE}/${profile}/${coord(from)};${coord(to)}`
       + `?overview=full&geometries=geojson&alternatives=3&steps=true`;
 
     const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
     if (!resp.ok) throw new Error(`OSRM HTTP ${resp.status}`);
     const data = await resp.json();
-
-    if (data.code !== 'Ok' || !data.routes?.length) {
-      throw new Error('Nessun percorso ciclabile trovato tra questi punti');
-    }
+    if (data.code !== 'Ok' || !data.routes?.length) return [];
 
     return data.routes.map((r, idx) => ({
       idx,
+      profile,
       points:   r.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-      distance: r.distance,   // metri
-      duration: r.duration,   // secondi
-      pheroScore: 0,          // calcolato dopo
+      distance: r.distance,
+      duration: r.duration,
+      pheroScore: 0,
+      riskPenalty: 0,
       steps:      parseOSRMSteps(r),
     }));
   }
@@ -352,7 +367,22 @@ class RoutingEngine {
           ? 1 - (r.distance - minDist) / (maxDist - minDist)
           : 1;
         const pScore = maxPhero > 0 ? r.pheroScore / maxPhero : 0;
-        return { ...r, dScore, pScore, score: (1 - alpha) * dScore + alpha * pScore };
+        const isFoot = r.profile === 'foot';
+        // Percorsi foot sono ammessi, ma richiedono segnale feromonico forte.
+        const ignoreRules = alpha >= CONFIG.ALPHA_IGNORE_RULES;
+        const riskPenalty = ignoreRules
+          ? 0
+          : isFoot
+          ? Math.max(0, CONFIG.FOOT_BASE_PENALTY - (pScore * CONFIG.FOOT_PHERO_RELIEF))
+          : 0;
+        return {
+          ...r,
+          dScore,
+          pScore,
+          ignoreRules,
+          riskPenalty,
+          score: ((1 - alpha) * dScore + alpha * pScore) - riskPenalty,
+        };
       })
       .sort((a, b) => b.score - a.score);
   }
@@ -1087,6 +1117,9 @@ class UIController {
         ? `Feromone ${Math.round(best.pScore * 100)}%  ·  `
         : 'Tratto vergine  ·  ';
       this.toast(`🐜 ${pheroMsg}${fmtDist(best.distance)}  ·  ${fmtTime(best.duration)}`, 'success', 4000);
+      if (best.profile === 'foot' && best.ignoreRules) {
+        this.toast('⚠ Modalita solo feromoni: possibili tratti non conformi al verso di marcia.', 'warning', 5000);
+      }
 
     } catch (err) {
       this.toast(`Errore routing: ${err.message}`, 'error');
@@ -1106,6 +1139,7 @@ class UIController {
       const pct     = Math.round(r.score  * 100);
       const pheroPct = Math.round((r.pScore || 0) * 100);
       const color   = pheroColor(r.pScore || 0);
+      const isNonConventional = r.profile === 'foot';
 
       return `
         <div class="route-card ${i === 0 ? 'route-card-best' : ''} fade-in"
@@ -1131,6 +1165,7 @@ class UIController {
           <div class="phero-bar-wrap">
             <div class="phero-bar-fill" style="width:${pheroPct}%"></div>
           </div>
+          ${isNonConventional ? '<div class="hint-text">⚠ Tratto non convenzionale suggerito dalla community</div>' : ''}
           ${i === 0 ? '<button class="btn-nav-start" id="btn-start-nav">🧭 Avvia Navigazione</button>' : ''}
         </div>`;
     }).join('');
