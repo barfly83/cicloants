@@ -49,6 +49,12 @@ const CONFIG = Object.freeze({
   FOOT_BASE_PENALTY:  0.18,  // penalita base per percorsi non-bike
   FOOT_PHERO_RELIEF:  0.14,  // quota penalty annullabile con feromoni alti
   ALPHA_IGNORE_RULES: 0.99,  // solo feromoni: ignora penalita di conformita
+  PHERO_WAYPOINTS:    5,     // varianti addizionali guidate dai feromoni
+  ROUTE_ENRICH_MIN_ALPHA: 0.65, // sotto questa soglia evita enrichment pesante
+  ROUTE_FOOT_MIN_ALPHA:   0.80, // foot solo quando peso feromoni è alto
+  ROUTE_MAX_EXTRA_JOBS:   4,    // limite chiamate extra per velocità
+  MATCH_MAX_POINTS:   100,   // limite punti per OSRM match
+  MATCH_TIMEOUT_MS:   12000,
 });
 
 /* ────────────────────────────────────────────────────────────────
@@ -87,6 +93,7 @@ const ROME_LANDMARKS = [
 
 /** Pausa asincrona */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const RECENT_TRACKS_KEY = 'cicloants_recent_tracks_v1';
 
 /** Distanza Haversine in km tra due punti {lat,lng} */
 function haversine(a, b) {
@@ -98,6 +105,22 @@ function haversine(a, b) {
   const h = sinDLat * sinDLat +
     Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * sinDLng * sinDLng;
   return R * 2 * Math.asin(Math.sqrt(h));
+}
+
+/** Distanza punto-segmento (approssimazione planare) in km */
+function pointToSegmentKm(p, a, b) {
+  const ax = a.lng; const ay = a.lat;
+  const bx = b.lng; const by = b.lat;
+  const px = p.lng; const py = p.lat;
+  const abx = bx - ax;
+  const aby = by - ay;
+  const ab2 = (abx * abx) + (aby * aby);
+  if (ab2 === 0) return haversine(p, a);
+  const apx = px - ax;
+  const apy = py - ay;
+  const t = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / ab2));
+  const proj = { lat: ay + (aby * t), lng: ax + (abx * t) };
+  return haversine(p, proj);
 }
 
 /** Formatta metri/km */
@@ -129,6 +152,32 @@ function pheroColor(norm) {
   if (norm > 0.50) return '#ffaa00';
   if (norm > 0.25) return '#00ff88';
   return '#00ccff';
+}
+
+function loadRecentTracks() {
+  try {
+    const raw = localStorage.getItem(RECENT_TRACKS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveRecentTrack(points) {
+  if (!Array.isArray(points) || points.length < 4) return;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const track = {
+    points: points.map(p => ({ lat: Number(p.lat), lng: Number(p.lng) })),
+    from: { lat: first.lat, lng: first.lng },
+    to: { lat: last.lat, lng: last.lng },
+    ts: Date.now(),
+  };
+  const all = loadRecentTracks();
+  all.unshift(track);
+  const trimmed = all.slice(0, 25);
+  localStorage.setItem(RECENT_TRACKS_KEY, JSON.stringify(trimmed));
 }
 
 /* ================================================================
@@ -308,27 +357,78 @@ class RoutingEngine {
    * @param {{lat,lng}} to
    * @returns {Promise<RouteResult[]>}
    */
-  async fetchRoutes(from, to) {
-    const attempts = await Promise.allSettled(
-      CONFIG.ROUTE_PROFILES.map(profile => this._fetchRoutesByProfile(profile, from, to))
+  async fetchRoutes(from, to, alpha = 0.7) {
+    const baseProfiles = alpha >= CONFIG.ROUTE_FOOT_MIN_ALPHA ? CONFIG.ROUTE_PROFILES : ['bike'];
+    // 1) Base robusta: prova sempre prima i percorsi diretti.
+    const baseAttempts = await Promise.allSettled(
+      baseProfiles.map(profile => this._fetchRoutesByProfile(profile, from, to, null))
     );
     const merged = [];
-    for (const result of attempts) {
+    for (const result of baseAttempts) {
       if (result.status === 'fulfilled' && result.value?.length) merged.push(...result.value);
     }
+
+    // Fallback finale: prova almeno una route bike "lite".
+    if (!merged.length) {
+      const emergency = await this._fetchRoutesByProfile('bike', from, to, null);
+      if (emergency?.length) merged.push(...emergency);
+    }
+    // Se non c'è neanche una route diretta, fermati con errore chiaro.
     if (!merged.length) throw new Error('Nessun percorso trovato tra questi punti');
-    return merged;
+
+    // 2) Enrichment: aggiungi varianti guidate dai feromoni (best effort).
+    if (alpha < CONFIG.ROUTE_ENRICH_MIN_ALPHA) {
+      const uniqueFast = [];
+      const fastSeen = new Set();
+      for (const r of merged) {
+        const key = this._routeSignature(r);
+        if (fastSeen.has(key)) continue;
+        fastSeen.add(key);
+        uniqueFast.push(r);
+      }
+      const withCommunityFast = [...uniqueFast, ...this._communityTrackCandidates(from, to)];
+      return withCommunityFast;
+    }
+
+    const waypointPts = this._bestPheromoneWaypoints(from, to, CONFIG.PHERO_WAYPOINTS);
+    const waypointCombos = this._buildWaypointCombos(waypointPts).slice(0, CONFIG.ROUTE_MAX_EXTRA_JOBS);
+    const extraJobs = [];
+    for (const profile of baseProfiles) {
+      waypointCombos.forEach(combo => extraJobs.push(this._fetchRoutesByProfile(profile, from, to, combo)));
+    }
+    const extraAttempts = await Promise.allSettled(extraJobs);
+    for (const result of extraAttempts) {
+      if (result.status === 'fulfilled' && result.value?.length) merged.push(...result.value);
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const r of merged) {
+      const key = this._routeSignature(r);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(r);
+    }
+    const withCommunity = [...unique, ...this._communityTrackCandidates(from, to)];
+    return withCommunity;
   }
 
-  async _fetchRoutesByProfile(profile, from, to) {
+  async _fetchRoutesByProfile(profile, from, to, waypoints = null) {
     const coord = (p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
-    const url = `${CONFIG.OSRM_BASE}/${profile}/${coord(from)};${coord(to)}`
+    const mids = Array.isArray(waypoints) ? waypoints : [];
+    const leg = [from, ...mids, to].map(coord).join(';');
+    const url = `${CONFIG.OSRM_BASE}/${profile}/${leg}`
       + `?overview=full&geometries=geojson&alternatives=3&steps=true`;
 
-    const resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`OSRM HTTP ${resp.status}`);
-    const data = await resp.json();
-    if (data.code !== 'Ok' || !data.routes?.length) return [];
+    let data = null;
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) data = await resp.json();
+    } catch (_) {}
+    if (!data?.routes?.length || data.code !== 'Ok') {
+      data = await this._fetchRoutesByProfileLite(profile, from, to, mids);
+    }
+    if (!data?.routes?.length || data.code !== 'Ok') return [];
 
     return data.routes.map((r, idx) => ({
       idx,
@@ -338,8 +438,127 @@ class RoutingEngine {
       duration: r.duration,
       pheroScore: 0,
       riskPenalty: 0,
+      viaPhero: mids.length > 0,
       steps:      parseOSRMSteps(r),
     }));
+  }
+
+  async _fetchRoutesByProfileLite(profile, from, to, mids = []) {
+    const coord = (p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`;
+    const leg = [from, ...(Array.isArray(mids) ? mids : []), to].map(coord).join(';');
+    const liteUrl = `${CONFIG.OSRM_BASE}/${profile}/${leg}`
+      + '?overview=full&geometries=geojson&alternatives=false&steps=false';
+    try {
+      const resp = await fetch(liteUrl, { signal: AbortSignal.timeout(9000) });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _buildWaypointCombos(waypoints) {
+    if (!Array.isArray(waypoints) || !waypoints.length) return [];
+    const ordered = [...waypoints]
+      .sort((a, b) => (a.progress || 0) - (b.progress || 0));
+    const combos = [];
+    // singolo waypoint
+    ordered.forEach(wp => combos.push([wp]));
+    // coppie adiacenti lungo la progressione A->B
+    for (let i = 0; i < ordered.length - 1; i++) {
+      combos.push([ordered[i], ordered[i + 1]]);
+    }
+    // tripletta centrale (corridoio forte)
+    if (ordered.length >= 3) {
+      const mid = Math.floor(ordered.length / 2);
+      const start = Math.max(0, mid - 1);
+      const triple = ordered.slice(start, start + 3);
+      if (triple.length === 3) combos.push(triple);
+    }
+    return combos.slice(0, 12);
+  }
+
+  _routeSignature(route) {
+    const pts = route.points || [];
+    if (!pts.length) return `${route.profile}:empty:${Math.round(route.distance)}`;
+    const first = pts[0];
+    const mid = pts[Math.floor(pts.length / 2)];
+    const last = pts[pts.length - 1];
+    const r = p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`;
+    return `${route.profile}:${r(first)}:${r(mid)}:${r(last)}:${Math.round(route.distance / 25)}`;
+  }
+
+  _bestPheromoneWaypoints(from, to, limit = 2) {
+    if (!Array.isArray(this.phero?.pts) || this.phero.pts.length < 20) return [];
+    const baselineKm = haversine(from, to);
+    const maxCorridorKm = Math.max(0.35, baselineKm * 0.45);
+    const abx = to.lng - from.lng;
+    const aby = to.lat - from.lat;
+    const ab2 = (abx * abx) + (aby * aby) || 1;
+    const scored = this.phero.pts
+      .map(p => {
+        const d = pointToSegmentKm(p, from, to);
+        if (d > maxCorridorKm) return null;
+        const endpointGuard = Math.min(haversine(p, from), haversine(p, to));
+        if (endpointGuard < 0.06) return null;
+        const apx = p.lng - from.lng;
+        const apy = p.lat - from.lat;
+        const progress = Math.max(0, Math.min(1, ((apx * abx) + (apy * aby)) / ab2));
+        return {
+          p,
+          progress,
+          score: (Number(p.intensity) || 0) * (1 - (d / maxCorridorKm)),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    const buckets = [0.15, 0.35, 0.55, 0.75, 0.9];
+    const out = [];
+    for (const target of buckets) {
+      const candidate = scored.find(c =>
+        Math.abs(c.progress - target) < 0.2 &&
+        !out.some(x => haversine(x, c.p) < 0.22)
+      );
+      if (!candidate) continue;
+      out.push({ lat: candidate.p.lat, lng: candidate.p.lng, progress: candidate.progress });
+      if (out.length >= limit) break;
+    }
+    for (const c of scored) {
+      if (out.length >= limit) break;
+      if (out.some(x => haversine(x, c.p) < 0.22)) continue;
+      out.push({ lat: c.p.lat, lng: c.p.lng, progress: c.progress });
+    }
+    return out;
+  }
+
+  _communityTrackCandidates(from, to) {
+    const tracks = loadRecentTracks();
+    if (!tracks.length) return [];
+    const out = [];
+    for (const tr of tracks) {
+      if (!Array.isArray(tr.points) || tr.points.length < 4) continue;
+      const direct = haversine(from, tr.from) < 0.45 && haversine(to, tr.to) < 0.45;
+      const reverse = haversine(from, tr.to) < 0.45 && haversine(to, tr.from) < 0.45;
+      if (!direct && !reverse) continue;
+      const points = reverse ? [...tr.points].reverse() : tr.points;
+      let distKm = 0;
+      for (let i = 1; i < points.length; i++) distKm += haversine(points[i - 1], points[i]);
+      const distance = Math.max(1, Math.round(distKm * 1000));
+      out.push({
+        idx: out.length,
+        profile: 'community',
+        points,
+        distance,
+        duration: Math.round((distKm / 16) * 3600), // stima 16 km/h
+        pheroScore: 0,
+        riskPenalty: 0,
+        viaPhero: true,
+        steps: [],
+      });
+      if (out.length >= 3) break;
+    }
+    return out;
   }
 
   /**
@@ -368,6 +587,7 @@ class RoutingEngine {
           : 1;
         const pScore = maxPhero > 0 ? r.pheroScore / maxPhero : 0;
         const isFoot = r.profile === 'foot';
+        const isCommunity = r.profile === 'community';
         // Percorsi foot sono ammessi, ma richiedono segnale feromonico forte.
         const ignoreRules = alpha >= CONFIG.ALPHA_IGNORE_RULES;
         const riskPenalty = ignoreRules
@@ -375,13 +595,14 @@ class RoutingEngine {
           : isFoot
           ? Math.max(0, CONFIG.FOOT_BASE_PENALTY - (pScore * CONFIG.FOOT_PHERO_RELIEF))
           : 0;
+        const communityBoost = isCommunity ? 0.08 : 0;
         return {
           ...r,
           dScore,
           pScore,
           ignoreRules,
           riskPenalty,
-          score: ((1 - alpha) * dScore + alpha * pScore) - riskPenalty,
+          score: ((1 - alpha) * dScore + alpha * pScore) - riskPenalty + communityBoost,
         };
       })
       .sort((a, b) => b.score - a.score);
@@ -811,7 +1032,7 @@ class TrackingEngine {
   }
 
   /** Ferma il tracciamento, deposita feromoni e ritorna metadati traccia. */
-  stop() {
+  async stop() {
     if (this.watchId != null) {
       navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
@@ -825,9 +1046,17 @@ class TrackingEngine {
     const avgSpeedKmh = durationSec > 0 ? (km / durationSec) * 3600 : 0;
 
     if (this.pts.length > 3) {
-      // Assottiglia i punti (1 ogni 3) prima di depositare
+      // Assottiglia i punti e prova map-matching per ridurre rumore GPS.
       const thinned = this.pts.filter((_, i) => i % 3 === 0);
-      this.phero.deposit(thinned, 1.0);
+      let depositPoints = thinned;
+      try {
+        const matched = await this._matchToRoads(thinned);
+        if (matched.length >= 3) depositPoints = matched;
+      } catch (err) {
+        console.debug('Track match fallback to raw points:', err?.message || err);
+      }
+      saveRecentTrack(depositPoints);
+      this.phero.deposit(depositPoints, 1.0);
     }
 
     this.map.clearTrack(); // include clearAccuracyCircle()
@@ -840,6 +1069,24 @@ class TrackingEngine {
       avgSpeedKmh: Math.round(avgSpeedKmh * 100) / 100,
       pointsCount: this.pts.length,
     };
+  }
+
+  async _matchToRoads(points) {
+    if (!Array.isArray(points) || points.length < 4) return points || [];
+    const sampled = points.length > CONFIG.MATCH_MAX_POINTS
+      ? points.filter((_, i) => i % Math.ceil(points.length / CONFIG.MATCH_MAX_POINTS) === 0)
+      : points;
+    const coords = sampled.map(p => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+    const url = `${CONFIG.OSRM_BASE}/bike/${coords}`
+      + '?overview=full&geometries=geojson&steps=false&annotations=false&gaps=ignore&tidy=true';
+    const resp = await fetch(url.replace('/route/v1/bike/', '/match/v1/bike/'), {
+      signal: AbortSignal.timeout(CONFIG.MATCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) throw new Error(`OSRM match HTTP ${resp.status}`);
+    const data = await resp.json();
+    const coordsOut = data?.matchings?.[0]?.geometry?.coordinates || [];
+    if (!coordsOut.length) return sampled;
+    return coordsOut.map(([lng, lat]) => ({ lat, lng }));
   }
 
   _distKm() {
@@ -873,7 +1120,7 @@ class UIController {
     this._debounces  = {};
     this._clickState = 'A'; // prossimo click sulla mappa imposta A o B
     this._lastRoutes = [];  // cached dopo ogni calcolo, usati per la navigazione
-    this._selectedRouteIdx = 0;
+    this._selectedRouteIdx = null;
   }
 
   init() {
@@ -1092,21 +1339,13 @@ class UIController {
     btn.querySelector('span:last-child').textContent = 'Calcolo in corso…';
 
     try {
-      const routes  = await this.app.routing.fetchRoutes(this.locA, this.locB);
+      const routes  = await this.app.routing.fetchRoutes(this.locA, this.locB, this.app.alpha);
       const ranked  = this.app.routing.rankRoutes(routes, this.app.alpha);
-      this._lastRoutes = ranked;
-      this._selectedRouteIdx = 0;
-      this._renderSelectedRoute();
-      this._renderRouteCards(this._lastRoutes, this._selectedRouteIdx);
-      const best = this._lastRoutes[this._selectedRouteIdx];
-
-      const pheroMsg = best.pheroScore > 0
-        ? `Feromone ${Math.round(best.pScore * 100)}%  ·  `
-        : 'Tratto vergine  ·  ';
-      this.toast(`🐜 ${pheroMsg}${fmtDist(best.distance)}  ·  ${fmtTime(best.duration)}`, 'success', 4000);
-      if (best.profile === 'foot' && best.ignoreRules) {
-        this.toast('⚠ Modalita solo feromoni: possibili tratti non conformi al verso di marcia.', 'warning', 5000);
-      }
+      this._lastRoutes = ranked.slice(0, 3);
+      this._selectedRouteIdx = null;
+      this._renderAllRoutes();
+      this._renderRouteCards(this._lastRoutes);
+      this.toast('Percorsi pronti: seleziona una alternativa per evidenziarla e avviare la navigazione.', 'info', 4200);
 
     } catch (err) {
       this.toast(`Errore routing: ${err.message}`, 'error');
@@ -1122,20 +1361,27 @@ class UIController {
     const section = document.getElementById('section-results');
     const cards   = document.getElementById('route-cards');
 
-    const selectedIdx = this._selectedRouteIdx || 0;
+    const selectedIdx = Number.isInteger(this._selectedRouteIdx) ? this._selectedRouteIdx : null;
+    const maxScore = Math.max(...ranked.map(r => r.score));
+    const minScore = Math.min(...ranked.map(r => r.score));
+    const pheromoneOnlyMode = this.app.alpha >= CONFIG.ALPHA_IGNORE_RULES;
     cards.innerHTML = ranked.map((r, i) => {
-      const pct     = Math.round(r.score  * 100);
+      const relativePct = maxScore > minScore
+        ? Math.round(((r.score - minScore) / (maxScore - minScore)) * 100)
+        : 100;
       const pheroPct = Math.round((r.pScore || 0) * 100);
+      const scoreLabel = pheromoneOnlyMode ? `${pheroPct}% feromoni` : `${relativePct}% score relativo`;
       const color   = pheroColor(r.pScore || 0);
       const isNonConventional = r.profile === 'foot';
-      const isSelected = i === selectedIdx;
+      const isCommunity = r.profile === 'community';
+      const isSelected = selectedIdx === i;
 
       return `
         <div class="route-card ${isSelected ? 'route-card-best' : ''} fade-in"
              style="animation-delay:${i * 0.08}s">
           <div class="route-card-header">
             <span class="route-label">${labels[i] || `Percorso ${i+1}`}</span>
-            <span class="route-score">${pct}%</span>
+            <span class="route-score">${scoreLabel}</span>
           </div>
           <div class="route-card-stats">
             <div class="route-stat">
@@ -1154,6 +1400,7 @@ class UIController {
           <div class="phero-bar-wrap">
             <div class="phero-bar-fill" style="width:${pheroPct}%"></div>
           </div>
+          ${isCommunity ? '<div class="hint-text">⭐ Traccia community reale (storico locale)</div>' : ''}
           ${isNonConventional ? '<div class="hint-text">⚠ Tratto non convenzionale suggerito dalla community</div>' : ''}
           <button class="btn-nav-start" data-route-select="${i}">
             ${isSelected ? '✅ Percorso selezionato' : 'Scegli questo percorso'}
@@ -1170,20 +1417,47 @@ class UIController {
       });
     });
     document.getElementById('btn-start-nav')?.addEventListener('click', () => {
-      this._startNavigation(this._lastRoutes[this._selectedRouteIdx || 0]);
+      if (!Number.isInteger(this._selectedRouteIdx)) {
+        this.toast('Seleziona prima un percorso.', 'warning');
+        return;
+      }
+      const chosen = this._lastRoutes[this._selectedRouteIdx];
+      this._startNavigation(chosen);
+      if (chosen?.profile === 'foot' && chosen?.ignoreRules) {
+        this.toast('⚠ Modalita solo feromoni: possibili tratti non conformi al verso di marcia.', 'warning', 5000);
+      }
     });
+  }
+
+  _renderAllRoutes() {
+    if (!Array.isArray(this._lastRoutes) || !this._lastRoutes.length) return;
+    this.app.map.clearRoutes();
+    this._lastRoutes.forEach((r, i) => {
+      const isTop = i === 0;
+      this.app.map.drawRoute(r.points, {
+        color: isTop ? '#0b5bd3' : '#ff2d7a',
+        weight: isTop ? 5 : 4,
+        opacity: isTop ? 0.88 : 0.82,
+        dash: isTop ? null : '14 10',
+      });
+    });
+    this.app.map.fitRoute(this._lastRoutes[0].points);
   }
 
   _renderSelectedRoute() {
     if (!Array.isArray(this._lastRoutes) || !this._lastRoutes.length) return;
-    const selectedIdx = Math.max(0, Math.min(this._selectedRouteIdx || 0, this._lastRoutes.length - 1));
+    if (!Number.isInteger(this._selectedRouteIdx)) {
+      this._renderAllRoutes();
+      return;
+    }
+    const selectedIdx = Math.max(0, Math.min(this._selectedRouteIdx, this._lastRoutes.length - 1));
     this._selectedRouteIdx = selectedIdx;
     const selected = this._lastRoutes[selectedIdx];
     this.app.map.clearRoutes();
     this._lastRoutes.forEach((r, i) => {
       if (i === selectedIdx) return;
       this.app.map.drawRoute(r.points, {
-        color: '#94aec8', weight: 3, opacity: 0.70, dash: '8 5',
+        color: '#ff2d7a', weight: 4, opacity: 0.78, dash: '14 10',
       });
     });
     this.app.map.drawRoute(selected.points, {
@@ -1246,8 +1520,8 @@ class UIController {
     }
   }
 
-  _stopTracking() {
-    const summary = this.app.track.stop();
+  async _stopTracking() {
+    const summary = await this.app.track.stop();
     const km = summary.km;
 
     document.getElementById('btn-track').innerHTML =
