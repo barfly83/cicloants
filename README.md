@@ -67,6 +67,8 @@ Le formiche (Dorigo, 1992) trovano il percorso ottimale senza un coordinatore ce
 | Biforcazione del percorso | Scelta tra 3 alternative OSRM |
 | Traiettoria d'élite | Heatmap rosso/arancio |
 
+In fase di sviluppo, al fine di popolare bene la mappa ciclabile, il processo di evaporazione dei ferormoni è stato disabilitato.
+
 ### Formula del routing
 ```
 score = (1 − α) × score_distanza + α × score_feromoni
