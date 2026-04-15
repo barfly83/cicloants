@@ -1129,6 +1129,8 @@ class UIController {
     this._clickState = 'A'; // prossimo click sulla mappa imposta A o B
     this._lastRoutes = [];  // cached dopo ogni calcolo, usati per la navigazione
     this._selectedRouteIdx = null;
+    this._poiMode = false;
+    this._pendingPoiLatLng = null;
   }
 
   init() {
@@ -1198,6 +1200,34 @@ class UIController {
         if (!el.contains(e.target)) el.style.display = 'none';
       });
     });
+
+    // POI mode toggle
+    document.getElementById('btn-poi-mode')?.addEventListener('click', () => {
+      if (!this.app.auth?.user) {
+        this.toast('Devi essere loggato per aggiungere un punto di interesse.', 'warning');
+        return;
+      }
+      this._poiMode = !this._poiMode;
+      const btn = document.getElementById('btn-poi-mode');
+      if (this._poiMode) {
+        btn.classList.add('recording');
+        this.toast('📍 Clicca sulla mappa per posizionare il punto di interesse.', 'info', 3500);
+      } else {
+        btn.classList.remove('recording');
+      }
+    });
+
+    // POI type selection
+    document.querySelectorAll('.poi-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.poi-type-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+    });
+
+    // POI save/cancel
+    document.getElementById('btn-poi-save')?.addEventListener('click', () => this._savePoiModal());
+    document.getElementById('btn-poi-cancel')?.addEventListener('click', () => this._closePoiModal());
   }
 
   renderAuthState() {
@@ -1277,6 +1307,14 @@ class UIController {
   /* ── Map click ────────────────────────────────────────────────── */
   _onMapClick(e) {
     const pt = { lat: e.latlng.lat, lng: e.latlng.lng };
+
+    // Modalità POI: intercetta il click per scegliere la posizione
+    if (this._poiMode) {
+      this._pendingPoiLatLng = pt;
+      this._openPoiModal();
+      return;
+    }
+
     const label = `${pt.lat.toFixed(4)}, ${pt.lng.toFixed(4)}`;
 
     if (this._clickState === 'A') {
@@ -1644,6 +1682,66 @@ class UIController {
         <span class="nav-step-text">${s.instruction}</span>
         <span class="nav-step-dist">${fmtDist(s.distance)}</span>
       </div>`).join('');
+  }
+
+  /* ── POI Modal ────────────────────────────────────────────────── */
+  _openPoiModal() {
+    const modal = document.getElementById('poi-modal');
+    if (!modal) return;
+    document.getElementById('poi-description').value = '';
+    document.querySelectorAll('.poi-type-btn').forEach(b => b.classList.remove('selected'));
+    modal.style.display = 'flex';
+  }
+
+  _closePoiModal() {
+    const modal = document.getElementById('poi-modal');
+    if (modal) modal.style.display = 'none';
+    this._poiMode = false;
+    const btn = document.getElementById('btn-poi-mode');
+    if (btn) btn.classList.remove('recording');
+  }
+
+  async _savePoiModal() {
+    const type = document.querySelector('.poi-type-btn.selected')?.dataset.type;
+    const desc = (document.getElementById('poi-description')?.value || '').trim();
+    if (!type) { this.toast('Seleziona un tipo di punto di interesse.', 'warning'); return; }
+    if (desc.length < 3) { this.toast('Aggiungi una descrizione (min. 3 caratteri).', 'warning'); return; }
+    const { lat, lng } = this._pendingPoiLatLng;
+    try {
+      const user = this.app.auth?.user;
+      if (!user) { this.toast('Devi essere loggato.', 'warning'); return; }
+      await this.app.pois.insert(user.id, { lat, lng, type, description: desc });
+      this._closePoiModal();
+      this.toast('📍 Punto di interesse salvato!', 'success');
+      // Ricarica POI vicini
+      await this.app.pois.loadNearby({ lat, lng });
+      this._renderPoiMarkers();
+    } catch (err) {
+      this.toast(`Errore salvataggio POI: ${err.message}`, 'error');
+    }
+  }
+
+  _renderPoiMarkers() {
+    const icons = { ramp:'🏗️', shortcut:'⚡', hazard:'⚠️', parking:'🅿️', shop:'🔧', other:'📌' };
+    const labels = { ramp:'Rampa', shortcut:'Scorciatoia', hazard:'Pericolo', parking:'Parcheggio', shop:'Negozio bici', other:'Altro' };
+    // Rimuovi vecchi marker POI
+    if (this._poiMarkers) this._poiMarkers.forEach(m => this.app.map.map.removeLayer(m));
+    this._poiMarkers = [];
+    for (const poi of (this.app.pois?.pois || [])) {
+      const icon = icons[poi.type] || '📌';
+      const label = labels[poi.type] || poi.type;
+      const date = new Date(poi.created_at).toLocaleDateString('it-IT');
+      const marker = L.marker([Number(poi.lat), Number(poi.lng)], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="poi-map-marker">${icon}</div>`,
+          iconSize: [32, 32], iconAnchor: [16, 16],
+        }),
+        zIndexOffset: 500,
+      }).addTo(this.app.map.map);
+      marker.bindPopup(`<div class="poi-popup"><h4>${icon} ${label}</h4><p>${poi.description}</p><small>📅 ${date}</small></div>`);
+      this._poiMarkers.push(marker);
+    }
   }
 
   /* ── Toast notifications ──────────────────────────────────────── */
@@ -2062,6 +2160,65 @@ class LeaderboardService {
   }
 }
 
+
+/* ================================================================
+   POI REPOSITORY
+   Gestisce i segnalazioni di punti interessanti (rampe, scorciatoie, etc)
+   ================================================================ */
+class POIRepository {
+  constructor(client) {
+    this.client = client;
+    this.pois = [];
+  }
+
+  async loadNearby(center, radiusKm = 2) {
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.cos(center.lat * Math.PI / 180));
+    const { data, error } = await this.client
+      .from('pois')
+      .select('id,lat,lng,type,description,upvotes,created_at')
+      .gte('lat', center.lat - latDelta)
+      .lte('lat', center.lat + latDelta)
+      .gte('lng', center.lng - lngDelta)
+      .lte('lng', center.lng + lngDelta)
+      .order('upvotes', { ascending: false });
+    
+    if (error) throw error;
+    this.pois = data || [];
+    return this.pois;
+  }
+
+  async insert(userId, { lat, lng, type, description }) {
+    const { data, error } = await this.client
+      .from('pois')
+      .insert({
+        user_id: userId,
+        lat: parseFloat(lat.toFixed(7)),
+        lng: parseFloat(lng.toFixed(7)),
+        type,
+        description,
+      })
+      .select();
+    
+    if (error) throw error;
+    return data?.[0] || null;
+  }
+
+  async upvote(poiId) {
+    const { error } = await this.client.rpc('upvote_poi', { poi_id: poiId });
+    if (error) throw error;
+  }
+
+  async deleteMyPOI(poiId, userId) {
+    const { error } = await this.client
+      .from('pois')
+      .delete()
+      .eq('id', poiId)
+      .eq('user_id', userId);
+    if (error) throw error;
+  }
+}
+
 /* ================================================================
    CICLOANTS — Orchestratore principale
    ================================================================ */
@@ -2083,6 +2240,7 @@ class CicloAnts {
     this.tracks = this.sbClient ? new TrackRepository(this.sbClient) : null;
     this.stats = this.sbClient ? new StatsService(this.sbClient) : null;
     this.leaderboard = this.sbClient ? new LeaderboardService(this.sbClient) : null;
+    this.pois = this.sbClient ? new POIRepository(this.sbClient) : null;
     this.communityKm = null;
   }
 
@@ -2119,6 +2277,11 @@ class CicloAnts {
 
     // Auto-localizzazione silenziosa all'avvio (centra la mappa sulla posizione reale)
     this._autoLocateOnStart();
+
+    // Carica POI vicini all'avvio
+    if (this.pois) {
+      this.pois.loadNearby(CONFIG.DEFAULT_VIEW).catch(() => {});
+    }
 
     // Welcome toast
     setTimeout(() => {

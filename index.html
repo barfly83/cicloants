@@ -295,6 +295,10 @@
       <span class="fab-icon">🚴</span>
       <span class="fab-label">Pedala!</span>
     </button>
+    <button class="fab fab-poi" id="btn-poi-mode" title="Aggiungi punto di interesse (solo utenti loggati)">
+      <span class="fab-icon">📌</span>
+      <span class="fab-label">Aggiungi POI</span>
+    </button>
   </div>
 
   <!-- ═══════════════════════════ TRACKING BAR ═══════════════════════════ -->
@@ -303,6 +307,26 @@
     <span class="tracking-label">🔴 Registrazione attiva</span>
     <span class="tracking-distance" id="tracking-distance">0.0 km</span>
     <button class="btn-stop" id="btn-stop-track">■ Ferma e salva</button>
+  </div>
+
+  <!-- ═══════════════════════════ POI MODAL ═══════════════════════════ -->
+  <div class="poi-modal-overlay" id="poi-modal" style="display:none;">
+    <div class="poi-modal-card">
+      <h3 class="poi-modal-title">📌 Nuovo punto di interesse</h3>
+      <div class="poi-type-grid">
+        <button class="poi-type-btn" data-type="ramp">🏗️<span>Rampa</span></button>
+        <button class="poi-type-btn" data-type="shortcut">⚡<span>Scorciatoia</span></button>
+        <button class="poi-type-btn" data-type="hazard">⚠️<span>Pericolo</span></button>
+        <button class="poi-type-btn" data-type="parking">🅿️<span>Parcheggio</span></button>
+        <button class="poi-type-btn" data-type="shop">🔧<span>Negozio</span></button>
+        <button class="poi-type-btn" data-type="other">📌<span>Altro</span></button>
+      </div>
+      <textarea id="poi-description" class="poi-desc-input" placeholder="Descrivi il punto (es. rampa accesso da via Roma, 3 gradini...)"></textarea>
+      <div class="poi-modal-actions">
+        <button class="btn-primary" id="btn-poi-save" style="margin-top:0">💾 Salva</button>
+        <button class="btn-secondary" id="btn-poi-cancel">Annulla</button>
+      </div>
+    </div>
   </div>
 
   <!-- ═══════════════════════════ TOAST CONTAINER ═══════════════════════════ -->

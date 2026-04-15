@@ -1331,3 +1331,128 @@ html, body {
 .leaflet-heatmap-layer {
   transition: opacity 0.5s ease;
 }
+
+/* ================================================================
+   POI — Points of Interest
+   ================================================================ */
+
+/* FAB POI button */
+.fab-poi {
+  background: #ffffff;
+  border-color: rgba(107, 0, 212, 0.35);
+  color: var(--purple);
+}
+.fab-poi:hover {
+  border-color: var(--purple);
+  background: rgba(107, 0, 212, 0.08);
+  box-shadow: 0 4px 20px rgba(107, 0, 212, 0.25);
+  transform: translateY(-2px);
+}
+.fab-poi.recording {
+  border-color: var(--purple);
+  background: rgba(107, 0, 212, 0.10);
+  animation: poiPulse 1.2s ease-in-out infinite;
+}
+@keyframes poiPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(107, 0, 212, 0.3); }
+  50%       { box-shadow: 0 0 22px rgba(107, 0, 212, 0.65); }
+}
+
+/* Modal overlay */
+.poi-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  padding: 20px;
+}
+.poi-modal-card {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.poi-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.poi-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.poi-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  background: var(--bg-raised);
+  border: 1.5px solid #d8e4f0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 22px;
+  transition: all var(--transition);
+}
+.poi-type-btn span {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.poi-type-btn:hover,
+.poi-type-btn.selected {
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+}
+.poi-type-btn.selected {
+  box-shadow: var(--cyan-glow);
+}
+.poi-desc-input {
+  width: 100%;
+  min-height: 80px;
+  background: var(--bg-raised);
+  border: 1.5px solid #c8d8e8;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.poi-desc-input:focus {
+  border-color: var(--cyan);
+  box-shadow: var(--cyan-glow);
+}
+.poi-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Marker sulla mappa */
+.poi-map-marker {
+  font-size: 22px;
+  line-height: 32px;
+  text-align: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.poi-map-marker:hover { transform: scale(1.25); }
+
+/* Popup POI */
+.poi-popup h4 { margin: 0 0 4px; font-size: 14px; color: var(--text-primary); }
+.poi-popup p  { margin: 0 0 4px; font-size: 12px; color: var(--text-secondary); }
+.poi-popup small { font-size: 11px; color: var(--text-muted); }
