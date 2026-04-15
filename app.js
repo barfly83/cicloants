@@ -60,6 +60,13 @@ const CONFIG = Object.freeze({
 /* ────────────────────────────────────────────────────────────────
    SUPABASE — Credenziali backend condiviso
    ──────────────────────────────────────────────────────────────── */
+// ─────────────────────────────────────────────────────────────────
+// EVAPORAZIONE FEROMONI
+// In fase di sviluppo con pochi dati, l'evaporazione svuota la mappa.
+// Impostare a true per riattivarla quando la base utenti sarà sufficiente.
+// ─────────────────────────────────────────────────────────────────
+const EVAPORATION_ENABLED = false;
+
 const SUPABASE_URL  = 'https://uuevijifdoyqgoxigmgc.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1ZXZpamlmZG95cWdveGlnbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2ODE2NjAsImV4cCI6MjA5MTI1NzY2MH0.YUS36i1sLhtfOZgGhZX8RnL-S83f2h-BS4uIwsiHpgI';
 
@@ -240,6 +247,7 @@ class PheromoneEngine {
    * Rimuove feromoni sotto la soglia.
    */
   evaporate() {
+    if (!EVAPORATION_ENABLED) return; // disabilitata in fase di sviluppo
     const now = Date.now();
     const hoursElapsed = (now - this.lastEvap) / 3_600_000;
     if (hoursElapsed < 0.005) return; // meno di 18s, salta
